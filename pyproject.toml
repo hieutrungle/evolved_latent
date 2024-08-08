@@ -1,0 +1,62 @@
+[tool]
+[tool.poetry]
+name = "evolved_latent"
+version = "0.1.0"
+homepage = "https://github.com/hieutrungle/evolved_latent"
+description = "Top-level package for evolved_latent."
+authors = ["Hieu Le <hieu.tg.le@gmail.com>"]
+readme = "README.rst"
+license = "MIT"
+classifiers = [
+    'Development Status :: 2 - Pre-Alpha',
+    'Intended Audience :: Developers',
+    'License :: OSI Approved :: MIT License',
+    'Natural Language :: English',
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3.5',
+    'Programming Language :: Python :: 3.6',
+    'Programming Language :: Python :: 3.7',
+    'Programming Language :: Python :: 3.8',
+]
+packages = [
+    { include = "evolved_latent" },
+    { include = "tests", format = "sdist" },
+]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<4"
+scipy = "^1.14.0"
+matplotlib = "^3.9.0"
+ipykernel = "^6.29.5"
+vtk = "^9.3.1"
+pyvista = "^0.44.1"
+trame = "^3.6.3"
+jax = { version = "0.4.28", extras = ["cuda12"] }
+tensorflow = { version = "2.17.0", extras = ["and-cuda"] }
+flax = "^0.8.5"
+numpy = "<2.0.0"
+tqdm = "^4.66.5"
+tensorboard = "^2.17.0"
+tensorboardx = "^2.6.2.2"
+
+[tool.poetry.group.dev.dependencies]
+bumpversion = "*"
+coverage = "*"
+flake8 = "*"
+invoke = "*"
+isort = "*"
+pylint = "*"
+pytest = ">=7.2.0"
+sphinx = ">=5.3.0"
+black = "*"
+
+
+[build-system]
+requires = ["poetry>=0.12"]
+build-backend = "poetry.masonry.api"
+
+[tool.isort]
+profile = "black"
+
+[tool.poetry.scripts]
+main = 'evolved_latent.cli:main'
