@@ -65,7 +65,7 @@ class TrainerModule:
 
     def train_model(self, num_epochs, train_loader, val_loader):
         # Train model for defined number of epochs
-        best_eval = 1e6
+        best_eval = np.inf
         for epoch_idx in tqdm(range(1, num_epochs + 1)):
             self.train_epoch(epoch=epoch_idx, train_loader=train_loader)
             if epoch_idx % 10 == 0:
