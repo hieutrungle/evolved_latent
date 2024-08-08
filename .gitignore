@@ -117,3 +117,6 @@ local_data/
 # poetry
 poetry.lock
 poetry-debug.toml
+
+# HPRC sbatch
+jobs/
