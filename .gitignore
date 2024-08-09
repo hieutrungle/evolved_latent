@@ -123,3 +123,6 @@ jobs/
 
 # checkpoints
 checkpoints/
+
+# Tensorboard logs
+logs/
