@@ -23,15 +23,23 @@ def main():
     data_dir = os.path.join(source_dir, "local_data", "vel_field_vtk")
 
     data_shape = (100, 100, 200, 1)
-
+    batch_size = 16
+    workers = 4
     train_ds = dataloader.FlameGenerator(
         data_dir,
-        batch_size=16,
+        batch_size=batch_size,
         data_shape=data_shape,
-        workers=4,
+        workers=workers,
         use_multiprocessing=True,
     )
-    print(f"Number of batches: {len(train_ds)}")
+    eval_ds = dataloader.FlameGenerator(
+        data_dir,
+        batch_size=batch_size,
+        data_shape=data_shape,
+        workers=workers,
+        use_multiprocessing=True,
+        eval_mode=True,
+    )
 
     seed = 0
     key = jax.random.PRNGKey(seed)
@@ -64,7 +72,7 @@ def main():
         seed=seed,
     )
 
-    trainer.train_model(num_epochs, train_ds, train_ds)
+    trainer.train_model(num_epochs, train_ds, eval_ds)
 
 
 if __name__ == "__main__":

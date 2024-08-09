@@ -15,6 +15,7 @@ class FlameGenerator(tf.keras.utils.PyDataset):
         workers=4,
         use_multiprocessing=True,
         max_queue_size=10,
+        eval_mode=False,
         **kwargs
     ):
         super().__init__(
@@ -33,6 +34,14 @@ class FlameGenerator(tf.keras.utils.PyDataset):
             key=lambda x: int(os.path.splitext(os.path.basename(x))[0].split("_")[-1])
         )
         self.num_files = len(self.filenames)
+
+        if not eval_mode:
+            self.num_files = self.num_files * 0.9
+            self.filenames = self.filenames[: int(self.num_files)]
+        else:
+            self.num_files = self.num_files * 0.1
+            self.filenames = self.filenames[int(self.num_files) :]
+
         self.indexes = np.arange(self.num_files)
 
     def __getitem__(self, i):
