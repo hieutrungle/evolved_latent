@@ -18,6 +18,7 @@ def mse_loss_fn(anply_fn, params, x, y_true):
 
 
 def main():
+    print(f"Number of GPUs: {jax.device_count(backend='gpu')}")
     lib_dir = importlib.resources.files(evolved_latent)
     source_dir = os.path.dirname(lib_dir)
     data_dir = os.path.join(source_dir, "local_data", "vel_field_vtk")
