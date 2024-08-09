@@ -4,7 +4,7 @@ import sys
 import numpy as np
 import evolved_latent
 from evolved_latent.utils import dataloader, trainer_module
-from evolved_latent.networks import evolved_net
+from evolved_latent.networks import autoencoder
 import os
 import jax
 import jax.numpy as jnp
@@ -39,7 +39,7 @@ def main():
     mid_sizes = (200, 200, 400)
     bottom_sizes = (400, 512)
     dense_sizes = (1024, 256, 64)
-    model = evolved_net.EvolvedAutoencoder.create(
+    model = autoencoder.EvolvedAutoencoder.create(
         key,
         top_sizes=top_sizes,
         mid_sizes=mid_sizes,
