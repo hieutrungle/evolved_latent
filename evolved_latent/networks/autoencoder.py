@@ -50,31 +50,20 @@ _str_to_activation = {
 class EvolvedAutoencoder(nn.Module):
     """EvolvedAutoencoder module for Flax."""
 
-    # @struct.dataclass
-    # class Config:
-    #     """Config dataclass for EvolvedAutoencoder."""
-
-    #     encoder: EvolvedEncoder.Config = EvolvedEncoder.Config()
-    #     decoder: EvolvedDecoder.Config = EvolvedDecoder.Config()
-
-    key: jax.random.PRNGKey
     encoder_config: dict
     decoder_config: dict
 
-    # config: Config
-
     def setup(self):
-        self.encoder = EvolvedEncoder.create(self.key, **self.encoder_config)
-        self.decoder = EvolvedDecoder.create(self.key, **self.decoder_config)
+        self.encoder = EvolvedEncoder.create(**self.encoder_config)
+        self.decoder = EvolvedDecoder.create(**self.decoder_config)
 
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, x: jnp.ndarray, train: bool = True) -> jnp.ndarray:
         x = self.encoder(x)
         x = self.decoder(x)
         return x
 
     @staticmethod
     def create(
-        key: jax.random.PRNGKey,
         top_sizes: Sequence[int],
         mid_sizes: Sequence[int],
         bottom_sizes: Sequence[int],
@@ -95,22 +84,12 @@ class EvolvedAutoencoder(nn.Module):
             "dense_sizes": dense_sizes[:-1][::-1],
             "activation": activation,
         }
-        model = EvolvedAutoencoder(key, encoder_config, decoder_config)
+        model = EvolvedAutoencoder(encoder_config, decoder_config)
         return model
 
 
 class EvolvedEncoder(nn.Module):
     """EvolvedEncoder module for Flax."""
-
-    # @struct.dataclass
-    # class Config:
-    #     """Config dataclass for EvolvedEncoder."""
-
-    #     first_layer_size: int = 4
-    #     mid_sizes: Sequence[int] = (128, 256, 512)
-    #     activation: Activation = "relu"
-
-    # config: Config
 
     top_sizes: Sequence[int]
     mid_sizes: Sequence[int]
@@ -119,7 +98,7 @@ class EvolvedEncoder(nn.Module):
     activation: Activation = "relu"
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, x: jnp.ndarray, train: bool = True) -> jnp.ndarray:
         for size in self.top_sizes:
             x = nn.Conv(size, (3, 3, 3), (2, 2, 2), padding="SAME")(x)
             x = _str_to_activation[self.activation](x)
@@ -144,7 +123,6 @@ class EvolvedEncoder(nn.Module):
 
     @staticmethod
     def create(
-        key: KeyArray,
         top_sizes: Sequence[int],
         mid_sizes: Sequence[int],
         bottom_sizes: Sequence[int],
@@ -167,7 +145,7 @@ class EvolvedDecoder(nn.Module):
     activation: Activation = "relu"
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+    def __call__(self, x: jnp.ndarray, train: bool = True) -> jnp.ndarray:
 
         for size in self.dense_sizes:
             x = nn.Dense(size)(x)
@@ -194,7 +172,6 @@ class EvolvedDecoder(nn.Module):
 
     @staticmethod
     def create(
-        key: KeyArray,
         top_sizes: Sequence[int],
         mid_sizes: Sequence[int],
         bottom_sizes: Sequence[int],
