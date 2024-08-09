@@ -52,7 +52,7 @@ def main():
     num_epochs = 100
     lr = 1e-3
     num_train_steps = num_epochs * len(train_ds)
-    checkpoint_path = os.path.join(lib_dir, "checkpoints")
+    checkpoint_path = os.path.join(source_dir, "checkpoints")
     os.makedirs(checkpoint_path, exist_ok=True)
     trainer = trainer_module.TrainerModule(
         model,

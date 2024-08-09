@@ -64,21 +64,38 @@ class TrainerModule:
         self.eval_step = jax.jit(eval_step)
 
     def train_model(self, num_epochs, train_loader, val_loader):
-        # Train model for defined number of epochs
         best_eval = np.inf
-        for epoch_idx in tqdm(range(1, num_epochs + 1)):
-            self.train_epoch(epoch=epoch_idx, train_loader=train_loader)
-            if epoch_idx % 10 == 0:
+        t = tqdm(
+            range(1, num_epochs + 1),
+            desc="Epochs",
+            total=num_epochs,
+            leave=False,
+            dynamic_ncols=True,
+        )
+        train_loss = 0.0
+        eval_loss = 0.0
+        for epoch_idx in t:
+            train_loss = self.train_epoch(epoch=epoch_idx, train_loader=train_loader)
+            self.logger.add_scalar("train/loss", train_loss, global_step=epoch_idx)
+            if epoch_idx % 1 == 0:
                 eval_loss = self.eval_model(val_loader)
                 self.logger.add_scalar("val/loss", eval_loss, global_step=epoch_idx)
                 if eval_loss < best_eval:
                     best_eval = eval_loss
                     self.save_model(step=epoch_idx)
                 self.logger.flush()
+
+            t.set_postfix(
+                {
+                    "train_loss": f"{train_loss:.4e}",
+                    "val_loss": f"{eval_loss:.4e}",
+                },
+                refresh=True,
+            )
         self.wait_for_checkpoint()
 
     def train_epoch(self, epoch: int, train_loader):
-        # Train model for one epoch, and log avg loss
+
         losses = []
         for batch in train_loader:
             (x, y) = batch
@@ -86,7 +103,7 @@ class TrainerModule:
             losses.append(loss)
         losses_np = np.stack(jax.device_get(losses))
         avg_loss = losses_np.mean()
-        self.logger.add_scalar("train/loss", avg_loss, global_step=epoch)
+        return avg_loss
 
     def eval_model(self, data_loader):
         # Test model on all images of a data loader and return avg loss

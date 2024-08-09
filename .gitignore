@@ -120,3 +120,6 @@ poetry-debug.toml
 
 # HPRC sbatch
 jobs/
+
+# checkpoints
+checkpoints/
