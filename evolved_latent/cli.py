@@ -26,7 +26,7 @@ def main():
 
     train_ds = dataloader.FlameGenerator(
         data_dir,
-        batch_size=4,
+        batch_size=16,
         data_shape=data_shape,
         workers=4,
         use_multiprocessing=True,
@@ -49,7 +49,7 @@ def main():
     )
 
     input_shape = data_shape
-    num_epochs = 100
+    num_epochs = 250
     lr = 1e-3
     num_train_steps = num_epochs * len(train_ds)
     checkpoint_path = os.path.join(source_dir, "checkpoints")
