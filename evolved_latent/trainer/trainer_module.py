@@ -391,7 +391,8 @@ class TrainerModule:
         metrics = defaultdict(float)
         num_train_steps = len(train_loader)
         start_time = time.time()
-        for batch in self.tracker(train_loader, desc="Training", leave=False):
+        for batch in train_loader:
+            # for batch in self.tracker(train_loader, desc="Training", leave=False):
             self.state, step_metrics = self.train_step(self.state, batch)
             for key in step_metrics:
                 metrics[log_prefix + key] += step_metrics[key] / num_train_steps
