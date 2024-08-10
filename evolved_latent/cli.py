@@ -1,35 +1,36 @@
-"""Console script for basyesian_optimization_circuit."""
+"""Console script for evolved_latent."""
 
-import sys
-import numpy as np
+import os
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"  # to avoid memory fragmentation
+# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+
+import importlib.resources
+import argparse
 import evolved_latent
 from evolved_latent.trainer import (
     evolved_autoencoder_trainer,
     baseline_autoencoder_trainer,
 )
 from evolved_latent.utils import dataloader
-import os
 import jax
 import jax.numpy as jnp
-import importlib.resources
 import time
 
 
-def mse_loss_fn(anply_fn, params, x, y_true):
-    y_pred = anply_fn(params, x)
-    loss = jnp.sum(jnp.mean((y_pred - y_true) ** 2, axis=0))
-    return loss
-
-
 def main():
+    args = parse_agrs()
     print(f"Number of GPUs: {jax.device_count(backend='gpu')}")
+
     lib_dir = importlib.resources.files(evolved_latent)
     source_dir = os.path.dirname(lib_dir)
     data_dir = os.path.join(source_dir, "local_data", "vel_field_vtk")
 
     data_shape = (100, 100, 200, 1)
-    batch_size = 4
-    workers = 4
+    num_epochs = args.num_epochs
+    batch_size = args.batch_size
+    workers = args.workers
     train_ds = dataloader.FlameGenerator(
         data_dir,
         batch_size=batch_size,
@@ -68,7 +69,6 @@ def main():
         },
         "check_val_every_n_epoch": 1,
     }
-    num_epochs = 4
 
     trainer = baseline_autoencoder_trainer.AutoencoderTrainer(**trainer_config)
     # trainer = evolved_autoencoder_trainer.AutoencoderTrainer(**trainer_config)
@@ -77,6 +77,19 @@ def main():
         train_ds, train_ds, train_ds, num_epochs=num_epochs
     )
     print(f"Eval metrics: \n{eval_metrics}")
+
+
+def parse_agrs():
+    parser = argparse.ArgumentParser()
+    # parser.add_argument("--config_file", "-dcfg", type=str, required=True)
+    parser.add_argument("--num_epochs", type=int, default=100)
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--log_interval", type=int, default=1)
+    parser.add_argument("--verbose", "-v", action="store_true")
+
+    args = parser.parse_args()
+    return args
 
 
 if __name__ == "__main__":

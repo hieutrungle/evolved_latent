@@ -1,0 +1,13 @@
+model_hparams:
+    - top_sizes: (1, 2, 4)
+      mid_sizes: (200, 200, 400)
+      bottom_sizes: (400, 512)
+      dense_sizes: (1024, 256, 64)
+      activation: relu
+
+optimizer_hparams:
+    - optimizer: adamw
+    - lr: 1e-3
+
+seed: 0,
+check_val_every_n_epoch: 1,
