@@ -9,10 +9,8 @@ os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"  # to avoid memory fragment
 import importlib.resources
 import argparse
 import evolved_latent
-from evolved_latent.trainer import (
-    evolved_autoencoder_trainer,
-    baseline_autoencoder_trainer,
-)
+
+from evolved_latent import trainers, networks
 from evolved_latent.utils import dataloader
 import jax
 import jax.numpy as jnp
@@ -51,6 +49,7 @@ def main():
     trainer_config = {
         # "model_class": autoencoder.EvolvedAutoencoder,
         "model_hparams": {
+            # "key": jax.random.PRNGKey(args.seed),
             "top_sizes": (1, 2, 4),
             "mid_sizes": (200, 200, 400),
             "bottom_sizes": (400, 512),
@@ -62,7 +61,7 @@ def main():
             "lr": 1e-3,
         },
         "exmp_input": train_ds[0][0],
-        "seed": 0,
+        "seed": args.seed,
         "logger_params": {
             "log_dir": os.path.join(source_dir, "logs"),
             "log_name": os.path.join("evolved_latent_" + current_time),
@@ -70,11 +69,36 @@ def main():
         "check_val_every_n_epoch": 1,
     }
 
-    trainer = baseline_autoencoder_trainer.AutoencoderTrainer(**trainer_config)
-    # trainer = evolved_autoencoder_trainer.AutoencoderTrainer(**trainer_config)
+    if args.model_type == "baseline":
+        trainer_config["model_class"] = (
+            networks.baseline_autoencoder.BaselineAutoencoder
+        )
 
+    elif args.model_type == "resnet":
+        trainer_config["model_class"] = networks.resnet_autoencoder.ResNetAutoencoder
+
+    elif args.model_type == "res_attn":
+        trainer_config["model_class"] = (
+            networks.res_attn_autoencoder.ResNetAttentionAutoencoder
+        )
+
+    elif args.model_type == "res_attn_qk":
+        trainer_config["model_class"] = (
+            networks.res_attn_qk_autoencoder.ResNetAttentionQKAutoencoder
+        )
+
+    else:
+        raise ValueError(f"Model type {args.model_type} not supported.")
+    trainer_config["logger_params"]["log_name"] = (
+        trainer_config["model_class"].__name__ + "_" + current_time
+    )
+    trainer = trainers.autoencoder_trainer.AutoencoderTrainer(**trainer_config)
+    trainer.print_class_variables()
+
+    print(f"*" * 80)
+    print(f"Training {trainer_config['model_class'].__name__} model")
     eval_metrics = trainer.train_model(
-        train_ds, train_ds, train_ds, num_epochs=num_epochs
+        train_ds, eval_ds, eval_ds, num_epochs=num_epochs
     )
     print(f"Eval metrics: \n{eval_metrics}")
 
@@ -82,11 +106,15 @@ def main():
 def parse_agrs():
     parser = argparse.ArgumentParser()
     # parser.add_argument("--config_file", "-dcfg", type=str, required=True)
+    parser.add_argument(
+        "--model_type", "-mt", type=str, required=True, default="resnet"
+    )
     parser.add_argument("--num_epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--log_interval", type=int, default=1)
     parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument("--seed", type=int, default=0)
 
     args = parser.parse_args()
     return args

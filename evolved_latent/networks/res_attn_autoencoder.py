@@ -47,30 +47,35 @@ _str_to_activation = {
 }
 
 
-class EvolvedAutoencoder(nn.Module):
-    """EvolvedAutoencoder module for Flax."""
+class ResNetAttentionAutoencoder(nn.Module):
+    """ResNetAttentionAutoencoder module for Flax."""
 
     encoder_config: dict
     decoder_config: dict
 
     def setup(self):
-        self.encoder = EvolvedEncoder.create(**self.encoder_config)
-        self.decoder = EvolvedDecoder.create(**self.decoder_config)
+        self.encoder = ResNetAttentionEncoder.create(**self.encoder_config)
+        self.decoder = ResNetAttentionDecoder.create(**self.decoder_config)
 
-    def __call__(self, x: jnp.ndarray, train: bool = True) -> jnp.ndarray:
-        x = self.encoder(x)
-        x = self.decoder(x)
+    def __call__(
+        self, x: jnp.ndarray, train: bool = True, dropout_rng=None
+    ) -> jnp.ndarray:
+        x = self.encoder(x, train=train, dropout_rng=dropout_rng)
+        x = self.decoder(x, train=train, dropout_rng=dropout_rng)
         return x
 
     @staticmethod
     def create(
+        # key: jax.random.PRNGKey,
         top_sizes: Sequence[int],
         mid_sizes: Sequence[int],
         bottom_sizes: Sequence[int],
         dense_sizes: Sequence[int],
         activation: Activation,
-    ) -> "EvolvedAutoencoder":
+    ) -> "ResNetAttentionAutoencoder":
+        # enc_key, dec_key = random.split(key)
         encoder_config = {
+            # "key": enc_key,
             "top_sizes": top_sizes[1:],
             "mid_sizes": mid_sizes[1:],
             "bottom_sizes": bottom_sizes[1:],
@@ -78,37 +83,50 @@ class EvolvedAutoencoder(nn.Module):
             "activation": activation,
         }
         decoder_config = {
+            # "key": dec_key,
             "top_sizes": top_sizes[:-1][::-1],
             "mid_sizes": mid_sizes[:-1][::-1],
             "bottom_sizes": bottom_sizes[:-1][::-1],
             "dense_sizes": dense_sizes[:-1][::-1],
             "activation": activation,
         }
-        model = EvolvedAutoencoder(encoder_config, decoder_config)
+        model = ResNetAttentionAutoencoder(encoder_config, decoder_config)
         return model
 
 
-class EvolvedEncoder(nn.Module):
-    """EvolvedEncoder module for Flax."""
+class ResNetAttentionEncoder(nn.Module):
+    """ResNetAttentionEncoder module for Flax."""
 
+    # key: jax.random.PRNGKey
     top_sizes: Sequence[int]
     mid_sizes: Sequence[int]
     bottom_sizes: Sequence[int]
     dense_sizes: Sequence[int]
-    activation: Activation = "relu"
+    activation: Activation = "gelu"
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray, train: bool = True) -> jnp.ndarray:
+    def __call__(
+        self, x: jnp.ndarray, train: bool = False, dropout_rng=None
+    ) -> jnp.ndarray:
         for size in self.top_sizes:
             x = nn.Conv(size, (3, 3, 3), (2, 2, 2), padding="SAME")(x)
             x = _str_to_activation[self.activation](x)
         x = jnp.reshape(x, (*x.shape[:-2], -1))
 
-        # TODO: use attention instead of dense layers
-        x = nn.Dense(x.shape[-1])(x)
+        q = x
+        x = nn.MultiHeadAttention(
+            num_heads=10,
+            qkv_features=x.shape[-1],
+            out_features=x.shape[-1],
+            dropout_rate=0.1,
+            deterministic=not train,
+        )(q, dropout_rng=dropout_rng)
 
         for size in self.mid_sizes:
-            x = nn.Conv(size, (5, 5), (2, 2), padding="VALID")(x)
+            # x = nn.Conv(size, (5, 5), (2, 2), padding="VALID")(x)
+            x = DownResidualBlock(
+                size, (5, 5), (2, 2), self.activation, padding="VALID"
+            )(x)
             x = _str_to_activation[self.activation](x)
 
         for size in self.bottom_sizes:
@@ -131,24 +149,27 @@ class EvolvedEncoder(nn.Module):
         bottom_sizes: Sequence[int],
         dense_sizes: Sequence[int],
         activation: Activation,
-    ) -> "EvolvedEncoder":
-        model = EvolvedEncoder(
+    ) -> "ResNetAttentionEncoder":
+        model = ResNetAttentionEncoder(
             top_sizes, mid_sizes, bottom_sizes, dense_sizes, activation
         )
         return model
 
 
-class EvolvedDecoder(nn.Module):
-    """EvolvedDecoder module for Flax."""
+class ResNetAttentionDecoder(nn.Module):
+    """ResNetAttentionDecoder module for Flax."""
 
+    # key: jax.random.PRNGKey
     top_sizes: Sequence[int]
     mid_sizes: Sequence[int]
     bottom_sizes: Sequence[int]
     dense_sizes: Sequence[int]
-    activation: Activation = "relu"
+    activation: Activation = "gelu"
 
     @nn.compact
-    def __call__(self, x: jnp.ndarray, train: bool = True) -> jnp.ndarray:
+    def __call__(
+        self, x: jnp.ndarray, train: bool = False, dropout_rng=None
+    ) -> jnp.ndarray:
 
         for size in self.dense_sizes:
             x = nn.Dense(size)(x)
@@ -157,18 +178,26 @@ class EvolvedDecoder(nn.Module):
         x = jnp.reshape(x, (x.shape[0], 2, 2, -1))
 
         for size in self.bottom_sizes:
-            # x = nn.ConvTranspose(size, (3, 3), (2, 2), padding="SAME")(x)
             x = UpResidualBlock(size, (3, 3), (2, 2), self.activation, padding="SAME")(
                 x
             )
             x = _str_to_activation[self.activation](x)
 
         for size in self.mid_sizes:
-            x = nn.ConvTranspose(size, (5, 5), (2, 2), padding="VALID")(x)
+            x = UpResidualBlock(size, (5, 5), (2, 2), self.activation, padding="VALID")(
+                x
+            )
             x = _str_to_activation[self.activation](x)
 
         # TODO: use attention instead of dense layers
-        x = nn.Dense(x.shape[-1])(x)
+        q = x
+        x = nn.MultiHeadAttention(
+            num_heads=10,
+            qkv_features=x.shape[-1],
+            out_features=x.shape[-1],
+            dropout_rate=0.1,
+            deterministic=not train,
+        )(q, dropout_rng=dropout_rng)
         x = jnp.reshape(x, (*x.shape[:-1], 50, 2 * len(self.top_sizes)))
 
         for size in self.top_sizes:
@@ -184,8 +213,8 @@ class EvolvedDecoder(nn.Module):
         bottom_sizes: Sequence[int],
         dense_sizes: Sequence[int],
         activation: Activation,
-    ) -> "EvolvedDecoder":
-        model = EvolvedDecoder(
+    ) -> "ResNetAttentionDecoder":
+        model = ResNetAttentionDecoder(
             top_sizes, mid_sizes, bottom_sizes, dense_sizes, activation
         )
         return model
@@ -197,7 +226,7 @@ class DownResidualBlock(nn.Module):
     features: int
     kernel_size: Tuple[int, int]
     strides: Tuple[int, int]
-    activation: Activation = "relu"
+    activation: Activation = "gelu"
     padding: str = "SAME"
 
     @nn.compact
@@ -222,7 +251,7 @@ class UpResidualBlock(nn.Module):
     features: int
     kernel_size: Tuple[int, int]
     strides: Tuple[int, int]
-    activation: Activation = "relu"
+    activation: Activation = "gelu"
     padding: str = "SAME"
 
     @nn.compact

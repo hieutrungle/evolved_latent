@@ -1,0 +1,1 @@
+from evolved_latent.trainers import autoencoder_trainer

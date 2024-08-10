@@ -289,14 +289,20 @@ class TrainerModule:
             end_value=lr / 5,
         )
 
-        # Clip gradients at max value, and evt. apply weight decay
-        transf = [optax.clip_by_global_norm(hparams.pop("gradient_clip", 1.0))]
-        if (
-            opt_class == optax.sgd and "weight_decay" in hparams
-        ):  # wd is integrated in adamw
-            transf.append(optax.add_decayed_weights(hparams.pop("weight_decay", 0.0)))
+        @optax.inject_hyperparams
+        def chain_optimizer(learning_rate: float):
+            # Clip gradients at max value, and evt. apply weight decay
+            transf = [optax.clip_by_global_norm(hparams.pop("gradient_clip", 1.0))]
+            # wd is integrated in adamw
+            if opt_class == optax.sgd and "weight_decay" in hparams:
+                transf.append(
+                    optax.add_decayed_weights(hparams.pop("weight_decay", 0.0))
+                )
 
-        optimizer = optax.chain(*transf, opt_class(lr_schedule, **hparams))
+            return optax.chain(*transf, opt_class(learning_rate, **hparams))
+
+        optimizer = chain_optimizer(learning_rate=lr_schedule)
+        # optimizer = optax.chain(*transf, opt_class(lr_schedule, **hparams))
 
         # Initialize training state
         self.state = TrainState.create(
@@ -338,7 +344,12 @@ class TrainerModule:
         # Prepare training loop
         self.on_training_start()
         best_eval_metrics = None
-        for epoch_idx in self.tracker(range(1, num_epochs + 1), desc="Epochs"):
+        eval_metrics = {
+            "val/loss": 0.0,
+        }
+        train_metrics = {"train/loss": 0.0}
+        t = self.tracker(range(1, num_epochs + 1), desc="Epochs")
+        for epoch_idx in t:
             train_metrics = self.train_epoch(train_loader, log_prefix="train/")
             self.log_metrics(train_metrics, step=epoch_idx)
             # self.logger.log_metrics(train_metrics, step=epoch_idx)
@@ -358,6 +369,13 @@ class TrainerModule:
                     self.save_model(step=epoch_idx)
                     self.save_metrics("best_eval", eval_metrics)
 
+            t.set_postfix(
+                {
+                    "train_loss": f"{train_metrics['train/loss']:.4e}",
+                    "val_loss": f"{eval_metrics['val/loss']:.4e}",
+                },
+                refresh=True,
+            )
         self.wait_for_checkpoint()
 
         # Test best model if possible
@@ -398,6 +416,9 @@ class TrainerModule:
                 metrics[log_prefix + key] += step_metrics[key] / num_train_steps
         metrics = {key: metrics[key].item() for key in metrics}
         metrics["epoch_time"] = time.time() - start_time
+        metrics["learning_rate"] = float(
+            self.state.opt_state.hyperparams["learning_rate"]
+        )
         return metrics
 
     def eval_model(
@@ -612,3 +633,31 @@ class TrainerModule:
         trainer = cls(exmp_input=exmp_input, **hparams)
         trainer.load_model()
         return trainer
+
+    def finalize(self):
+        """
+        Method called at the end of the training. Can be used for final logging
+        or similar.
+        """
+        pass
+
+    def print_class_variables(self):
+        """
+        Prints all class variables of the TrainerModule.
+        """
+        print()
+        print(f"*" * 80)
+        print(f"Class variables of {self.__class__.__name__}:")
+        skipped_keys = ["state"]
+
+        def check_for_skipped_keys(key):
+            for skip_key in skipped_keys:
+                if str(skip_key).lower() in str(key).lower():
+                    return True
+            return False
+
+        for key, value in self.__dict__.items():
+            if not check_for_skipped_keys(key):
+                print(f" - {key}: {value}")
+        print(f"*" * 80)
+        print()
