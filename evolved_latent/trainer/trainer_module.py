@@ -17,11 +17,10 @@ import jax
 import jax.numpy as jnp
 from jax import random
 from flax import linen as nn
-from flax.training import train_state, checkpoints
+from flax.training import train_state
 import optax
 
-# Tensorflow for Data Loading
-
+import orbax.checkpoint as ocp
 
 # Logging
 from tensorboardX import SummaryWriter
@@ -48,7 +47,7 @@ class TrainerModule:
         logger_params: Dict[str, Any] = None,
         enable_progress_bar: bool = True,
         debug: bool = False,
-        check_val_every_n_epoch: int = 1,
+        check_val_every_n_epoch: int = 10,
         **kwargs,
     ):
         """
@@ -109,6 +108,21 @@ class TrainerModule:
         self.logger = self.init_logger(logger_params)
         self.create_jitted_functions()
         self.state = self.init_model(exmp_input)
+        self.checkpoint_manager = self.init_checkpoint_manager(self.logger.logdir)
+
+    def init_checkpoint_manager(self, checkpoint_path: str):
+        """
+        Initializes a checkpoint manager for saving and loading model states.
+
+        Args:
+          checkpoint_path: Path to the directory where the checkpoints are stored.
+        """
+        checkpoint_path = os.path.abspath(checkpoint_path)
+        options = ocp.CheckpointManagerOptions(max_to_keep=5, create=True)
+        return ocp.CheckpointManager(
+            checkpoint_path,
+            options=options,
+        )
 
     def init_logger(self, logger_params: Optional[Dict] = None):
         """
@@ -125,12 +139,13 @@ class TrainerModule:
             base_log_dir = logger_params.get("base_log_dir", "checkpoints/")
             # Prepare logging
             log_dir = os.path.join(base_log_dir, self.config["model_class"])
-            if "logger_name" in logger_params:
-                log_dir = os.path.join(log_dir, logger_params["logger_name"])
             version = None
         else:
             version = ""
+
         # Create logger object
+        if "log_name" in logger_params:
+            log_dir = os.path.join(log_dir, logger_params["log_name"])
         logger_type = logger_params.get("logger_type", "TensorBoard").lower()
         if logger_type == "tensorboard":
             logger = SummaryWriter(logdir=log_dir, comment=version)
@@ -260,24 +275,29 @@ class TrainerModule:
             opt_class = optax.sgd
         else:
             assert False, f'Unknown optimizer "{opt_class}"'
+
         # Initialize learning rate scheduler
         # A cosine decay scheduler is used, but others are also possible
         lr = hparams.pop("lr", 1e-3)
-        warmup = hparams.pop("warmup", 0)
+        num_train_steps = int(num_epochs * num_steps_per_epoch)
+        warmup_steps = hparams.pop("warmup_steps", num_train_steps // 5)
         lr_schedule = optax.warmup_cosine_decay_schedule(
-            init_value=0.0,
+            init_value=lr / 50,
             peak_value=lr,
-            warmup_steps=warmup,
-            decay_steps=int(num_epochs * num_steps_per_epoch),
-            end_value=0.01 * lr,
+            warmup_steps=warmup_steps,
+            decay_steps=num_train_steps,
+            end_value=lr / 5,
         )
+
         # Clip gradients at max value, and evt. apply weight decay
         transf = [optax.clip_by_global_norm(hparams.pop("gradient_clip", 1.0))]
         if (
             opt_class == optax.sgd and "weight_decay" in hparams
         ):  # wd is integrated in adamw
             transf.append(optax.add_decayed_weights(hparams.pop("weight_decay", 0.0)))
+
         optimizer = optax.chain(*transf, opt_class(lr_schedule, **hparams))
+
         # Initialize training state
         self.state = TrainState.create(
             apply_fn=self.state.apply_fn,
@@ -307,20 +327,29 @@ class TrainerModule:
           A dictionary of the train, validation and evt. test metrics for the
           best model on the validation set.
         """
+        assert num_epochs > 0, "Number of epochs must be larger than 0"
+        assert (
+            num_epochs // self.check_val_every_n_epoch > 0
+        ), f"Number of epochs ({num_epochs}) must be larger than check_val_every_n_epoch ({self.check_val_every_n_epoch})"
+
         # Create optimizer and the scheduler for the given number of epochs
         self.init_optimizer(num_epochs, len(train_loader))
+
         # Prepare training loop
         self.on_training_start()
         best_eval_metrics = None
         for epoch_idx in self.tracker(range(1, num_epochs + 1), desc="Epochs"):
-            train_metrics = self.train_epoch(train_loader)
-            self.logger.log_metrics(train_metrics, step=epoch_idx)
+            train_metrics = self.train_epoch(train_loader, log_prefix="train/")
+            self.log_metrics(train_metrics, step=epoch_idx)
+            # self.logger.log_metrics(train_metrics, step=epoch_idx)
             self.on_training_epoch_end(epoch_idx)
+
             # Validation every N epochs
             if epoch_idx % self.check_val_every_n_epoch == 0:
                 eval_metrics = self.eval_model(val_loader, log_prefix="val/")
                 self.on_validation_epoch_end(epoch_idx, eval_metrics, val_loader)
-                self.logger.log_metrics(eval_metrics, step=epoch_idx)
+                self.log_metrics(eval_metrics, step=epoch_idx)
+                # self.logger.log_metrics(eval_metrics, step=epoch_idx)
                 self.save_metrics(f"eval_epoch_{str(epoch_idx).zfill(3)}", eval_metrics)
                 # Save best model
                 if self.is_new_model_better(eval_metrics, best_eval_metrics):
@@ -328,23 +357,31 @@ class TrainerModule:
                     best_eval_metrics.update(train_metrics)
                     self.save_model(step=epoch_idx)
                     self.save_metrics("best_eval", eval_metrics)
+
+        self.wait_for_checkpoint()
+
         # Test best model if possible
         if test_loader is not None:
             self.load_model()
             test_metrics = self.eval_model(test_loader, log_prefix="test/")
-            self.logger.log_metrics(test_metrics, step=epoch_idx)
+            self.log_metrics(test_metrics, step=epoch_idx)
+            # self.logger.log_metrics(test_metrics, step=epoch_idx)
             self.save_metrics("test", test_metrics)
             best_eval_metrics.update(test_metrics)
+
         # Close logger
-        self.logger.finalize("success")
+        # self.logger.finalize("success")
         return best_eval_metrics
 
-    def train_epoch(self, train_loader: Iterator) -> Dict[str, Any]:
+    def train_epoch(
+        self, train_loader: Iterator, log_prefix: Optional[str] = "train/"
+    ) -> Dict[str, Any]:
         """
         Trains a model for one epoch.
 
         Args:
           train_loader: Data loader of the training set.
+          log_prefix: Prefix to add to all metrics (e.g. 'train/')
 
         Returns:
           A dictionary of the average training metrics over all batches
@@ -357,7 +394,7 @@ class TrainerModule:
         for batch in self.tracker(train_loader, desc="Training", leave=False):
             self.state, step_metrics = self.train_step(self.state, batch)
             for key in step_metrics:
-                metrics["train/" + key] += step_metrics[key] / num_train_steps
+                metrics[log_prefix + key] += step_metrics[key] / num_train_steps
         metrics = {key: metrics[key].item() for key in metrics}
         metrics["epoch_time"] = time.time() - start_time
         return metrics
@@ -386,8 +423,8 @@ class TrainerModule:
                 if isinstance(batch, (list, tuple))
                 else batch.shape[0]
             )
-            for key in step_metrics:
-                metrics[key] += step_metrics[key] * batch_size
+            for key, value in step_metrics.items():
+                metrics[key] += value * batch_size
             num_elements += batch_size
         metrics = {
             (log_prefix + key): (metrics[key] / num_elements).item() for key in metrics
@@ -441,6 +478,17 @@ class TrainerModule:
         else:
             return iterator
 
+    def log_metrics(self, metrics: Dict[str, Any], step: int):
+        """
+        Logs a dictionary of metrics to the logger.
+
+        Args:
+          metrics: A dictionary of metrics to log.
+          step: The current training step.
+        """
+        for k, v in metrics.items():
+            self.logger.add_scalar(k, v, step)
+
     def save_metrics(self, filename: str, metrics: Dict[str, Any]):
         """
         Saves a dictionary of metrics to file. Can be used as a textual
@@ -486,32 +534,40 @@ class TrainerModule:
         """
         pass
 
-    def save_model(self, step: int = 0):
+    def save_model(self, step: int):
         """
-        Saves current training state at certain training iteration. Only the model
-        parameters and batch statistics are saved to reduce memory footprint. To
-        support the training to be continued from a checkpoint, this method can be
-        extended to include the optimizer state as well.
-
-        Args:
-          step: Index of the step to save the model at, e.g. epoch.
+        Save the agent's parameters to a file.
         """
-        checkpoints.save_checkpoint(
-            ckpt_dir=self.log_dir,
-            target={"params": self.state.params, "batch_stats": self.state.batch_stats},
-            step=step,
-            overwrite=True,
+        self.checkpoint_manager.save(
+            step,
+            args=ocp.args.StandardSave(
+                {"params": self.state.params, "batch_stats": self.state.batch_stats}
+            ),
         )
 
-    def load_model(self):
+    def wait_for_checkpoint(self):
         """
-        Loads model parameters and batch statistics from the logging directory.
+        Wait for the checkpoint manager to finish writing checkpoints.
         """
-        state_dict = checkpoints.restore_checkpoint(ckpt_dir=self.log_dir, target=None)
+        self.checkpoint_manager.wait_until_finished()
+
+    def load_model(self, step: int = None):
+        """
+        Load the agent's parameters from a file.
+        """
+        if step == None:
+            step = self.checkpoint_manager.best_step()
+        state_dict = self.checkpoint_manager.restore(
+            step,
+            args=ocp.args.StandardRestore(
+                {"params": self.state.params, "batch_stats": self.state.batch_stats}
+            ),
+        )
         self.state = TrainState.create(
             apply_fn=self.model.apply,
             params=state_dict["params"],
             batch_stats=state_dict["batch_stats"],
+            # batch_stats=state_dict["batch_stats"],
             # Optimizer will be overwritten when training starts
             tx=self.state.tx if self.state.tx else optax.sgd(0.1),
             rng=self.state.rng,

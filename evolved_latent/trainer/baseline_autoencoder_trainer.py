@@ -1,13 +1,13 @@
 import jax
 from jax import numpy as jnp
 from evolved_latent.trainer.trainer_module import TrainerModule
-from evolved_latent.networks.autoencoder import EvolvedAutoencoder
+from evolved_latent.networks.baseline_autoencoder import BaselineAutoencoder
 
 
 class AutoencoderTrainer(TrainerModule):
 
     def __init__(self, **kwargs):
-        super().__init__(model_class=EvolvedAutoencoder, **kwargs)
+        super().__init__(model_class=BaselineAutoencoder, **kwargs)
 
     def create_step_functions(self):
         def mse_loss(params, batch):

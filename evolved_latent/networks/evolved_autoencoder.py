@@ -112,7 +112,10 @@ class EvolvedEncoder(nn.Module):
             x = _str_to_activation[self.activation](x)
 
         for size in self.bottom_sizes:
-            x = nn.Conv(size, (3, 3), (2, 2), padding="SAME")(x)
+            # x = nn.Conv(size, (3, 3), (2, 2), padding="SAME")(x)
+            x = DownResidualBlock(
+                size, (3, 3), (2, 2), self.activation, padding="SAME"
+            )(x)
             x = _str_to_activation[self.activation](x)
 
         x = jnp.reshape(x, (x.shape[0], -1))
@@ -154,13 +157,17 @@ class EvolvedDecoder(nn.Module):
         x = jnp.reshape(x, (x.shape[0], 2, 2, -1))
 
         for size in self.bottom_sizes:
-            x = nn.ConvTranspose(size, (3, 3), (2, 2), padding="SAME")(x)
+            # x = nn.ConvTranspose(size, (3, 3), (2, 2), padding="SAME")(x)
+            x = UpResidualBlock(size, (3, 3), (2, 2), self.activation, padding="SAME")(
+                x
+            )
             x = _str_to_activation[self.activation](x)
 
         for size in self.mid_sizes:
             x = nn.ConvTranspose(size, (5, 5), (2, 2), padding="VALID")(x)
             x = _str_to_activation[self.activation](x)
 
+        # TODO: use attention instead of dense layers
         x = nn.Dense(x.shape[-1])(x)
         x = jnp.reshape(x, (*x.shape[:-1], 50, 2 * len(self.top_sizes)))
 
@@ -182,3 +189,53 @@ class EvolvedDecoder(nn.Module):
             top_sizes, mid_sizes, bottom_sizes, dense_sizes, activation
         )
         return model
+
+
+class DownResidualBlock(nn.Module):
+    """ResidualBlock module for Flax."""
+
+    features: int
+    kernel_size: Tuple[int, int]
+    strides: Tuple[int, int]
+    activation: Activation = "relu"
+    padding: str = "SAME"
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray, train: bool = True) -> jnp.ndarray:
+        residual = nn.Conv(
+            self.features, self.kernel_size, self.strides, padding=self.padding
+        )(x)
+        x = nn.Conv(
+            self.features, self.kernel_size, self.strides, padding=self.padding
+        )(x)
+        x = _str_to_activation[self.activation](x)
+        x = nn.Conv(self.features * 4, (1, 1), (1, 1), padding="SAME")(x)
+        x = _str_to_activation[self.activation](x)
+        x = nn.Conv(self.features, (1, 1), (1, 1), padding="SAME")(x)
+        x = x + residual
+        return x
+
+
+class UpResidualBlock(nn.Module):
+    """UpResidualBlock module for Flax."""
+
+    features: int
+    kernel_size: Tuple[int, int]
+    strides: Tuple[int, int]
+    activation: Activation = "relu"
+    padding: str = "SAME"
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray, train: bool = True) -> jnp.ndarray:
+        residual = nn.ConvTranspose(
+            self.features, self.kernel_size, self.strides, padding=self.padding
+        )(x)
+        x = nn.ConvTranspose(
+            self.features, self.kernel_size, self.strides, padding=self.padding
+        )(x)
+        x = _str_to_activation[self.activation](x)
+        x = nn.ConvTranspose(self.features * 4, (1, 1), (1, 1), padding="SAME")(x)
+        x = _str_to_activation[self.activation](x)
+        x = nn.ConvTranspose(self.features, (1, 1), (1, 1), padding="SAME")(x)
+        x = x + residual
+        return x

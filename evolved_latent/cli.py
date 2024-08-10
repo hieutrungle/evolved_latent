@@ -3,13 +3,16 @@
 import sys
 import numpy as np
 import evolved_latent
-from evolved_latent.trainer import autoencoder_trainer
+from evolved_latent.trainer import (
+    evolved_autoencoder_trainer,
+    baseline_autoencoder_trainer,
+)
 from evolved_latent.utils import dataloader
-from evolved_latent.networks import autoencoder
 import os
 import jax
 import jax.numpy as jnp
 import importlib.resources
+import time
 
 
 def mse_loss_fn(anply_fn, params, x, y_true):
@@ -25,7 +28,7 @@ def main():
     data_dir = os.path.join(source_dir, "local_data", "vel_field_vtk")
 
     data_shape = (100, 100, 200, 1)
-    batch_size = 16
+    batch_size = 4
     workers = 4
     train_ds = dataloader.FlameGenerator(
         data_dir,
@@ -43,6 +46,7 @@ def main():
         eval_mode=True,
     )
 
+    current_time = time.strftime("%Y%m%d-%H%M%S")
     trainer_config = {
         # "model_class": autoencoder.EvolvedAutoencoder,
         "model_hparams": {
@@ -53,51 +57,26 @@ def main():
             "activation": "relu",
         },
         "optimizer_hparams": {
+            "optimizer": "adamw",
             "lr": 1e-3,
         },
         "exmp_input": train_ds[0][0],
         "seed": 0,
         "logger_params": {
             "log_dir": os.path.join(source_dir, "logs"),
-            "log_name": "evolved_latent",
+            "log_name": os.path.join("evolved_latent_" + current_time),
         },
+        "check_val_every_n_epoch": 1,
     }
+    num_epochs = 4
 
-    trainer = autoencoder_trainer.AutoencoderTrainer(**trainer_config)
+    trainer = baseline_autoencoder_trainer.AutoencoderTrainer(**trainer_config)
+    # trainer = evolved_autoencoder_trainer.AutoencoderTrainer(**trainer_config)
 
-    exit()
-    # seed = 0
-    # key = jax.random.PRNGKey(seed)
-    # top_sizes = (1, 2, 4)
-    # mid_sizes = (200, 200, 400)
-    # bottom_sizes = (400, 512)
-    # dense_sizes = (1024, 256, 64)
-    # model = autoencoder.EvolvedAutoencoder.create(
-    #     key,
-    #     top_sizes=top_sizes,
-    #     mid_sizes=mid_sizes,
-    #     bottom_sizes=bottom_sizes,
-    #     dense_sizes=dense_sizes,
-    #     activation="relu",
-    # )
-
-    # input_shape = data_shape
-    # num_epochs = 250
-    # lr = 1e-3
-    # num_train_steps = num_epochs * len(train_ds)
-    # checkpoint_path = os.path.join(source_dir, "checkpoints")
-    # os.makedirs(checkpoint_path, exist_ok=True)
-    # trainer_m = trainer_module_tmp.TrainerModule(
-    #     model,
-    #     input_shape=input_shape,
-    #     lr=lr,
-    #     num_train_steps=num_train_steps,
-    #     checkpoint_path=checkpoint_path,
-    #     loss_fn=mse_loss_fn,
-    #     seed=seed,
-    # )
-
-    # trainer_m.train_model(num_epochs, train_ds, eval_ds)
+    eval_metrics = trainer.train_model(
+        train_ds, train_ds, train_ds, num_epochs=num_epochs
+    )
+    print(f"Eval metrics: \n{eval_metrics}")
 
 
 if __name__ == "__main__":
