@@ -16,47 +16,51 @@ class FlameGenerator(tf.keras.utils.PyDataset):
         data_dir,
         batch_size,
         data_shape,
-        shuffle=True,
+        shuffle=False,
         workers=4,
         use_multiprocessing=True,
         max_queue_size=10,
         eval_mode=False,
-        **kwargs
+        seed=0,
+        **kwargs,
     ):
         super().__init__(
             workers=workers,
             use_multiprocessing=use_multiprocessing,
             max_queue_size=max_queue_size,
-            **kwargs
+            **kwargs,
         )
         self.data_dir = data_dir
         self.batch_size = batch_size
         self.data_shape = data_shape
         self.shuffle = shuffle
+        self.np_rng = np.random.default_rng(seed)
 
         self.filenames = glob.glob(data_dir + "/*.vtk", recursive=True)
         self.filenames.sort(
             key=lambda x: int(os.path.splitext(os.path.basename(x))[0].split("_")[-1])
         )
-        # self.filenames = self.filenames[:88]
+        self.filenames = self.filenames[:88]
         self.num_files = len(self.filenames)
 
         if not eval_mode:
-            self.num_files = self.num_files * 0.9
-            self.filenames = self.filenames[: int(self.num_files)]
+            self.num_files = int(self.num_files * 0.9)
+            self.filenames = self.filenames[: self.num_files]
         else:
-            self.num_files = self.num_files * 0.1
-            self.filenames = self.filenames[int(self.num_files) :]
+            self.num_files = int(self.num_files * 0.1)
+            self.filenames = self.filenames[self.num_files :]
 
         self.indexes = np.arange(self.num_files)
 
     def __getitem__(self, i):
+        if self.shuffle and i == 0:
+            self.indexes = self.np_rng.permutation(self.indexes)
         start = i * self.batch_size
         end = (i + 1) * self.batch_size
         data_batch = np.empty((self.batch_size, *self.data_shape))
 
         for j in range(start, end):
-            data_ = pv.read(self.filenames[j])
+            data_ = pv.read(self.filenames[self.indexes[j]])
             data_ = data_.get_array("-velocity_magnitude")
             data_ = data_.reshape(self.data_shape)
             data_ = self.normalize(data_)

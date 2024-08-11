@@ -9,10 +9,10 @@ os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"  # to avoid memory fragment
 # Jax acceleration flags
 os.environ["XLA_FLAGS"] = (
     "--xla_gpu_enable_triton_softmax_fusion=true "
-    "--xla_gpu_triton_gemm_any=false "
-    "--xla_gpu_enable_async_collectives=true "
-    "--xla_gpu_enable_latency_hiding_scheduler=true "
-    "--xla_gpu_enable_highest_priority_async_stream=true "
+    "--xla_gpu_triton_gemm_any=True "
+    # "--xla_gpu_enable_async_collectives=true "
+    # "--xla_gpu_enable_latency_hiding_scheduler=true "
+    # "--xla_gpu_enable_highest_priority_async_stream=true "
 )
 
 import importlib.resources
@@ -45,6 +45,7 @@ def main():
         data_shape=data_shape,
         workers=workers,
         use_multiprocessing=True,
+        shuffle=True,
     )
     eval_ds = dataloader.FlameGenerator(
         data_dir,
@@ -59,12 +60,12 @@ def main():
     trainer_config = {
         # "model_class": autoencoder.EvolvedAutoencoder,
         "model_hparams": {
-            # "key": jax.random.PRNGKey(args.seed),
             "top_sizes": (1, 2, 4),
             "mid_sizes": (200, 200, 400),
             "bottom_sizes": (400, 512),
             "dense_sizes": (1024, 256, 64),
-            "activation": "relu",
+            "activation": "gelu",
+            "dtype": "bfloat16",
         },
         "optimizer_hparams": {
             "optimizer": "adamw",
