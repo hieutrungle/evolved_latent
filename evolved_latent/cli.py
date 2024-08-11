@@ -20,6 +20,7 @@ import time
 def main():
     args = parse_agrs()
     print(f"Number of GPUs: {jax.device_count(backend='gpu')}")
+    print("Device:", jax.devices()[0])
 
     lib_dir = importlib.resources.files(evolved_latent)
     source_dir = os.path.dirname(lib_dir)
