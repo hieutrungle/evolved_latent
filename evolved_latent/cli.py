@@ -78,6 +78,11 @@ def main():
     elif args.model_type == "resnet":
         trainer_config["model_class"] = networks.resnet_autoencoder.ResNetAutoencoder
 
+    elif args.model_type == "resnet_norm":
+        trainer_config["model_class"] = (
+            networks.resnet_norm_autoencoder.ResNetNormAutoencoder
+        )
+
     elif args.model_type == "res_attn":
         trainer_config["model_class"] = (
             networks.res_attn_autoencoder.ResNetAttentionAutoencoder
