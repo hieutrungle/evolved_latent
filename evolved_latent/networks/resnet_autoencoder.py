@@ -1,50 +1,13 @@
-from typing import Callable, Optional, Tuple, Sequence, Union, Any
-import os
-from jax._src.typing import Array
-from jax._src import dtypes
-
-import numpy as np
-
-import jax
-from jax import lax, random, numpy as jnp
-from flax import struct
-from jax._src import core
-from flax import linen as nn  # nn notation also used in PyTorch and in Flax's older API
-
-from flax.training import train_state
-
-# JAX optimizers - a separate lib developed by DeepMind
-import optax
-import functools
-from dataclasses import dataclass
-
-import time
-
-KeyArray = Array
-DTypeLikeFloat = Any
-DTypeLikeComplex = Any
-DTypeLikeInexact = Any  # DTypeLikeFloat | DTypeLikeComplex
-
-
-Activation = Union[str, Callable]
-
-
-class Identity(nn.Module):
-    """Identity module for Flax."""
-
-    def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-        return x
-
-
-_str_to_activation = {
-    "relu": nn.activation.relu,
-    "tanh": nn.activation.tanh,
-    "sigmoid": nn.activation.sigmoid,
-    "swish": nn.activation.hard_swish,
-    "gelu": nn.activation.gelu,
-    "elu": nn.activation.elu,
-    "identity": Identity(),
-}
+from typing import Tuple, Sequence, Any
+from jax import numpy as jnp
+from flax import linen as nn
+from evolved_latent.networks.network_utils import (
+    Activation,
+    _str_to_activation,
+    DType,
+    _str_to_dtype,
+)
+from evolved_latent.networks.common_blocks import DownResidualBlock, UpResidualBlock
 
 
 class ResNetAutoencoder(nn.Module):
@@ -69,6 +32,7 @@ class ResNetAutoencoder(nn.Module):
         bottom_sizes: Sequence[int],
         dense_sizes: Sequence[int],
         activation: Activation,
+        dtype: DType = jnp.bfloat16,
     ) -> "ResNetAutoencoder":
         encoder_config = {
             "top_sizes": top_sizes[1:],
@@ -76,6 +40,7 @@ class ResNetAutoencoder(nn.Module):
             "bottom_sizes": bottom_sizes[1:],
             "dense_sizes": dense_sizes[1:],
             "activation": activation,
+            "dtype": dtype,
         }
         decoder_config = {
             "top_sizes": top_sizes[:-1][::-1],
@@ -83,6 +48,7 @@ class ResNetAutoencoder(nn.Module):
             "bottom_sizes": bottom_sizes[:-1][::-1],
             "dense_sizes": dense_sizes[:-1][::-1],
             "activation": activation,
+            "dtype": dtype,
         }
         model = ResNetAutoencoder(encoder_config, decoder_config)
         return model
@@ -95,37 +61,45 @@ class ResNetEncoder(nn.Module):
     mid_sizes: Sequence[int]
     bottom_sizes: Sequence[int]
     dense_sizes: Sequence[int]
-    activation: Activation = "gelu"
+    activation: nn.activation
+    dtype: jnp.dtype
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, train: bool = True) -> jnp.ndarray:
         for size in self.top_sizes:
-            x = nn.Conv(size, (3, 3, 3), (2, 2, 2), padding="SAME")(x)
-            x = _str_to_activation[self.activation](x)
+            x = nn.Conv(size, (3, 3, 3), (2, 2, 2), padding="SAME", dtype=self.dtype)(x)
+            x = self.activation(x)
         x = jnp.reshape(x, (*x.shape[:-2], -1))
 
-        # TODO: use attention instead of dense layers
-        x = nn.Dense(x.shape[-1])(x)
+        x = nn.Dense(x.shape[-1], dtype=self.dtype)(x)
 
         for size in self.mid_sizes:
-            # x = nn.Conv(size, (5, 5), (2, 2), padding="VALID")(x)
             x = DownResidualBlock(
-                size, (5, 5), (2, 2), self.activation, padding="VALID"
+                size,
+                (5, 5),
+                (2, 2),
+                padding="VALID",
+                activation=self.activation,
+                dtype=self.dtype,
             )(x)
-            x = _str_to_activation[self.activation](x)
+            x = self.activation(x)
 
         for size in self.bottom_sizes:
-            # x = nn.Conv(size, (3, 3), (2, 2), padding="SAME")(x)
             x = DownResidualBlock(
-                size, (3, 3), (2, 2), self.activation, padding="SAME"
+                size,
+                (3, 3),
+                (2, 2),
+                padding="SAME",
+                activation=self.activation,
+                dtype=self.dtype,
             )(x)
-            x = _str_to_activation[self.activation](x)
+            x = self.activation(x)
 
         x = jnp.reshape(x, (x.shape[0], -1))
         for size in self.dense_sizes:
-            x = nn.Dense(size)(x)
-            x = _str_to_activation[self.activation](x)
-        return x
+            x = nn.Dense(size, dtype=self.dtype)(x)
+            x = self.activation(x)
+        return x.astype(jnp.float32)
 
     @staticmethod
     def create(
@@ -134,9 +108,14 @@ class ResNetEncoder(nn.Module):
         bottom_sizes: Sequence[int],
         dense_sizes: Sequence[int],
         activation: Activation,
+        dtype: DType,
     ) -> "ResNetEncoder":
+        if isinstance(dtype, str):
+            dtype = _str_to_dtype[dtype]
+        if isinstance(activation, str):
+            activation = _str_to_activation[activation]
         model = ResNetEncoder(
-            top_sizes, mid_sizes, bottom_sizes, dense_sizes, activation
+            top_sizes, mid_sizes, bottom_sizes, dense_sizes, activation, dtype
         )
         return model
 
@@ -148,38 +127,50 @@ class ResNetDecoder(nn.Module):
     mid_sizes: Sequence[int]
     bottom_sizes: Sequence[int]
     dense_sizes: Sequence[int]
-    activation: Activation = "gelu"
+    activation: nn.activation
+    dtype: jnp.dtype
 
     @nn.compact
     def __call__(self, x: jnp.ndarray, train: bool = True) -> jnp.ndarray:
 
         for size in self.dense_sizes:
-            x = nn.Dense(size)(x)
-            x = _str_to_activation[self.activation](x)
+            x = nn.Dense(size, dtype=self.dtype)(x)
+            x = self.activation(x)
 
         x = jnp.reshape(x, (x.shape[0], 2, 2, -1))
 
         for size in self.bottom_sizes:
-            x = UpResidualBlock(size, (3, 3), (2, 2), self.activation, padding="SAME")(
-                x
-            )
-            x = _str_to_activation[self.activation](x)
+            x = UpResidualBlock(
+                size,
+                (3, 3),
+                (2, 2),
+                padding="SAME",
+                activation=self.activation,
+                dtype=self.dtype,
+            )(x)
+            x = self.activation(x)
 
         for size in self.mid_sizes:
-            x = UpResidualBlock(size, (5, 5), (2, 2), self.activation, padding="VALID")(
-                x
-            )
-            x = _str_to_activation[self.activation](x)
+            x = UpResidualBlock(
+                size,
+                (5, 5),
+                (2, 2),
+                padding="VALID",
+                activation=self.activation,
+                dtype=self.dtype,
+            )(x)
+            x = self.activation(x)
 
-        # TODO: use attention instead of dense layers
-        x = nn.Dense(x.shape[-1])(x)
+        x = nn.Dense(x.shape[-1], dtype=self.dtype)(x)
         x = jnp.reshape(x, (*x.shape[:-1], 50, 2 * len(self.top_sizes)))
 
         for size in self.top_sizes:
-            x = nn.ConvTranspose(size, (3, 3, 3), (2, 2, 2), padding="SAME")(x)
-            x = _str_to_activation[self.activation](x)
+            x = nn.ConvTranspose(
+                size, (3, 3, 3), (2, 2, 2), padding="SAME", dtype=self.dtype
+            )(x)
+            x = self.activation(x)
 
-        return x
+        return x.astype(jnp.float32)
 
     @staticmethod
     def create(
@@ -188,58 +179,13 @@ class ResNetDecoder(nn.Module):
         bottom_sizes: Sequence[int],
         dense_sizes: Sequence[int],
         activation: Activation,
+        dtype: DType,
     ) -> "ResNetDecoder":
+        if isinstance(dtype, str):
+            dtype = _str_to_dtype[dtype]
+        if isinstance(activation, str):
+            activation = _str_to_activation[activation]
         model = ResNetDecoder(
-            top_sizes, mid_sizes, bottom_sizes, dense_sizes, activation
+            top_sizes, mid_sizes, bottom_sizes, dense_sizes, activation, dtype
         )
         return model
-
-
-class DownResidualBlock(nn.Module):
-    """ResidualBlock module for Flax."""
-
-    features: int
-    kernel_size: Tuple[int, int]
-    strides: Tuple[int, int]
-    activation: Activation = "gelu"
-    padding: str = "SAME"
-
-    @nn.compact
-    def __call__(self, x: jnp.ndarray, train: bool = True) -> jnp.ndarray:
-        residual = nn.Conv(
-            self.features, self.kernel_size, self.strides, padding=self.padding
-        )(x)
-        x = nn.Conv(
-            self.features, self.kernel_size, self.strides, padding=self.padding
-        )(x)
-        x = _str_to_activation[self.activation](x)
-        x = nn.Conv(self.features * 4, (1, 1), (1, 1), padding="SAME")(x)
-        x = _str_to_activation[self.activation](x)
-        x = nn.Conv(self.features, (1, 1), (1, 1), padding="SAME")(x)
-        x = x + residual
-        return x
-
-
-class UpResidualBlock(nn.Module):
-    """UpResidualBlock module for Flax."""
-
-    features: int
-    kernel_size: Tuple[int, int]
-    strides: Tuple[int, int]
-    activation: Activation = "gelu"
-    padding: str = "SAME"
-
-    @nn.compact
-    def __call__(self, x: jnp.ndarray, train: bool = True) -> jnp.ndarray:
-        residual = nn.ConvTranspose(
-            self.features, self.kernel_size, self.strides, padding=self.padding
-        )(x)
-        x = nn.ConvTranspose(
-            self.features, self.kernel_size, self.strides, padding=self.padding
-        )(x)
-        x = _str_to_activation[self.activation](x)
-        x = nn.ConvTranspose(self.features * 4, (1, 1), (1, 1), padding="SAME")(x)
-        x = _str_to_activation[self.activation](x)
-        x = nn.ConvTranspose(self.features, (1, 1), (1, 1), padding="SAME")(x)
-        x = x + residual
-        return x
