@@ -59,9 +59,16 @@ class FlameGenerator(tf.keras.utils.PyDataset):
             data_ = pv.read(self.filenames[j])
             data_ = data_.get_array("-velocity_magnitude")
             data_ = data_.reshape(self.data_shape)
+            data_ = self.normalize(data_)
             data_batch[j - start] = data_
 
         return (data_batch, data_batch)
+
+    def normalize(self, data):
+        return data / 6.8
+
+    def denormalize(self, data):
+        return data * 6.8
 
     def __len__(self):
         return len(self.indexes) // self.batch_size
