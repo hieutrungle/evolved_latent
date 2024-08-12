@@ -221,7 +221,7 @@ class FlameGenerator(torch.utils.data.Dataset):
         self.filenames.sort(
             key=lambda x: int(os.path.splitext(os.path.basename(x))[0].split("_")[-1])
         )
-        self.filenames = self.filenames[:88]
+        # self.filenames = self.filenames[:88]
         self.num_files = len(self.filenames)
 
         if is_train:
