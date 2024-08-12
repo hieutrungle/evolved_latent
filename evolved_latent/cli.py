@@ -43,20 +43,27 @@ def main():
         data_dir,
         batch_size=batch_size,
         data_shape=data_shape,
-        workers=workers,
-        use_multiprocessing=True,
         shuffle=True,
     )
-    eval_ds = dataloader.FlameGenerator(
+
+    val_ds = dataloader.FlameGenerator(
         data_dir,
         batch_size=batch_size,
         data_shape=data_shape,
-        workers=workers,
-        use_multiprocessing=True,
-        eval_mode=True,
+        is_train=False,
+    )
+
+    train_loader, val_loader = dataloader.create_data_loaders(
+        train_ds,
+        val_ds,
+        train=[True, False],
+        batch_size=batch_size,
+        num_workers=workers,
+        seed=args.seed,
     )
 
     current_time = time.strftime("%Y%m%d-%H%M%S")
+    exmp_input = train_ds[0][0].reshape(1, *data_shape)
     trainer_config = {
         # "model_class": autoencoder.EvolvedAutoencoder,
         "model_hparams": {
@@ -71,7 +78,7 @@ def main():
             "optimizer": "adamw",
             "lr": 1e-3,
         },
-        "exmp_input": train_ds[0][0],
+        "exmp_input": exmp_input,
         "grad_accum_steps": args.grad_accum_steps,
         "seed": args.seed,
         "logger_params": {
@@ -115,7 +122,7 @@ def main():
     print(f"*" * 80)
     print(f"Training {trainer_config['model_class'].__name__} model")
     eval_metrics = trainer.train_model(
-        train_ds, eval_ds, eval_ds, num_epochs=num_epochs
+        train_loader, val_loader, val_loader, num_epochs=num_epochs
     )
     print(f"Eval metrics: \n{eval_metrics}")
 

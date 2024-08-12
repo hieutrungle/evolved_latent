@@ -87,6 +87,7 @@ class TrainerModule:
             "logger_params": logger_params,
             "enable_progress_bar": self.enable_progress_bar,
             "debug": self.debug,
+            "grad_accum_steps": grad_accum_steps,
             "check_val_every_n_epoch": check_val_every_n_epoch,
             "seed": self.seed,
         }
@@ -104,7 +105,7 @@ class TrainerModule:
         exmp_input = (
             [exmp_input] if not isinstance(exmp_input, (list, tuple)) else exmp_input
         )
-        # self.print_tabulate(exmp_input)
+        self.print_tabulate(exmp_input)
 
         # Init trainer parts
         self.logger = self.init_logger(logger_params)
