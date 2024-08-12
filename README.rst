@@ -35,3 +35,8 @@ This package was created with Cookiecutter_ and the `briggySmalls/cookiecutter-p
 
 .. _Cookiecutter: https://github.com/audreyr/cookiecutter
 .. _`briggySmalls/cookiecutter-pypackage`: https://github.com/briggySmalls/cookiecutter-pypackage
+
+## Installation
+
+poetry source add --priority=explicit pytorch-gpu-src https://download.pytorch.org/whl/cu124
+poetry add --source pytorch-gpu-src torch torchvision torchaudio
