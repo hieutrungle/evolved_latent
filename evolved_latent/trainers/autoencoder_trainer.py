@@ -30,38 +30,6 @@ class AutoencoderTrainer(TrainerModule):
             rngs = jax.random.split(rng_key, num_minibatches)
             grad_fn = jax.value_and_grad(mse_loss)
 
-            grads = None
-            loss = None
-            for minibatch_idx in range(num_minibatches):
-                with jax.named_scope(f"minibatch_{minibatch_idx}"):
-                    # Split the batch into minibatches.
-                    start = minibatch_idx * minibatch_size
-                    end = start + minibatch_size
-                    minibatch = jax.tree_map(lambda x: x[start:end], batch)
-                    step_loss, step_grads = grad_fn(
-                        state.params,
-                        minibatch,
-                        train=True,
-                        rng_key=rngs[minibatch_idx],
-                    )
-
-                    if grads is None:
-                        grads = step_grads
-                        loss = step_loss
-                    else:
-                        grads = jax.tree_map(jnp.add, grads, step_grads)
-                        loss = jax.tree_map(jnp.add, loss, step_loss)
-            # Average gradients over minibatches.
-            grads = jax.tree_map(lambda g: g / num_minibatches, grads)
-            return loss, grads
-
-        def accumulate_gradients(state, batch, rng_key):
-            batch_size = batch[0].shape[0]
-            num_minibatches = self.grad_accum_steps
-            minibatch_size = batch_size // self.grad_accum_steps
-            rngs = jax.random.split(rng_key, num_minibatches)
-            grad_fn = jax.value_and_grad(mse_loss)
-
             def _minibatch_step(
                 minibatch_idx: jax.Array | int,
             ) -> Tuple[PyTree, jnp.ndarray]:
