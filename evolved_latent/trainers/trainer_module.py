@@ -362,19 +362,24 @@ class TrainerModule:
             # self.logger.log_metrics(train_metrics, step=epoch_idx)
             self.on_training_epoch_end(epoch_idx)
 
-            # Validation every N epochs
-            if epoch_idx % self.check_val_every_n_epoch == 0:
-                eval_metrics = self.eval_model(val_loader, log_prefix="val/")
-                self.on_validation_epoch_end(epoch_idx, eval_metrics, val_loader)
-                self.log_metrics(eval_metrics, step=epoch_idx)
-                # self.logger.log_metrics(eval_metrics, step=epoch_idx)
-                self.save_metrics(f"eval_epoch_{str(epoch_idx).zfill(3)}", eval_metrics)
-                # Save best model
-                if self.is_new_model_better(eval_metrics, best_eval_metrics):
-                    best_eval_metrics = eval_metrics
-                    best_eval_metrics.update(train_metrics)
-                    self.save_model(step=epoch_idx)
-                    self.save_metrics("best_eval", eval_metrics)
+            with jax.profiler.StepTraceAnnotation(
+                "validation_epoch", step_num=epoch_idx
+            ):
+                # Validation every N epochs
+                if epoch_idx % self.check_val_every_n_epoch == 0:
+                    eval_metrics = self.eval_model(val_loader, log_prefix="val/")
+                    self.on_validation_epoch_end(epoch_idx, eval_metrics, val_loader)
+                    self.log_metrics(eval_metrics, step=epoch_idx)
+                    # self.logger.log_metrics(eval_metrics, step=epoch_idx)
+                    self.save_metrics(
+                        f"eval_epoch_{str(epoch_idx).zfill(3)}", eval_metrics
+                    )
+                    # Save best model
+                    if self.is_new_model_better(eval_metrics, best_eval_metrics):
+                        best_eval_metrics = eval_metrics
+                        best_eval_metrics.update(train_metrics)
+                        self.save_model(step=epoch_idx)
+                        self.save_metrics("best_eval", eval_metrics)
 
             t.set_postfix(
                 {
