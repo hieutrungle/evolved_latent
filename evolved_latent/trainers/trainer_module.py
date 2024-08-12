@@ -43,6 +43,7 @@ class TrainerModule:
         model_hparams: Dict[str, Any],
         optimizer_hparams: Dict[str, Any],
         exmp_input: Any,
+        grad_accum_steps: int = 1,
         seed: int = 42,
         logger_params: Dict[str, Any] = None,
         enable_progress_bar: bool = True,
@@ -76,6 +77,7 @@ class TrainerModule:
         self.debug = debug
         self.seed = seed
         self.check_val_every_n_epoch = check_val_every_n_epoch
+        self.grad_accum_steps = grad_accum_steps
 
         # Set of hyperparameters to save
         self.config = {
@@ -102,7 +104,7 @@ class TrainerModule:
         exmp_input = (
             [exmp_input] if not isinstance(exmp_input, (list, tuple)) else exmp_input
         )
-        self.print_tabulate(exmp_input)
+        # self.print_tabulate(exmp_input)
 
         # Init trainer parts
         self.logger = self.init_logger(logger_params)
@@ -409,7 +411,7 @@ class TrainerModule:
         metrics = defaultdict(float)
         num_train_steps = len(train_loader)
         start_time = time.time()
-        for batch in train_loader:
+        for i, batch in enumerate(train_loader):
             # for batch in self.tracker(train_loader, desc="Training", leave=False):
             self.state, step_metrics = self.train_step(self.state, batch)
             for key in step_metrics:

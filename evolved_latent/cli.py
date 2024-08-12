@@ -72,6 +72,7 @@ def main():
             "lr": 1e-3,
         },
         "exmp_input": train_ds[0][0],
+        "grad_accum_steps": args.grad_accum_steps,
         "seed": args.seed,
         "logger_params": {
             "log_dir": os.path.join(source_dir, "logs"),
@@ -127,6 +128,7 @@ def parse_agrs():
     )
     parser.add_argument("--num_epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--grad_accum_steps", type=int, default=1)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--log_interval", type=int, default=1)
     parser.add_argument("--verbose", "-v", action="store_true")

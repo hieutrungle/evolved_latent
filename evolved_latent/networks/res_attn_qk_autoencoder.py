@@ -84,6 +84,7 @@ class ResNetAttentionQKEncoder(nn.Module):
             dropout_rate=0.1,
             deterministic=not train,
             dtype=self.dtype,
+            normalize_qk=True,
         )(q, k, dropout_rng=dropout_rng)
 
         for size in self.mid_sizes:
@@ -191,6 +192,7 @@ class ResNetAttentionQKDecoder(nn.Module):
             dropout_rate=0.1,
             deterministic=not train,
             dtype=self.dtype,
+            normalize_qk=True,
         )(q, k, dropout_rng=dropout_rng)
 
         x = jnp.reshape(x, (*x.shape[:-1], 50, 2 * len(self.top_sizes)))
