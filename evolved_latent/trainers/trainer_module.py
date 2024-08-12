@@ -352,8 +352,12 @@ class TrainerModule:
         }
         train_metrics = {"train/loss": 0.0}
         t = self.tracker(range(1, num_epochs + 1), desc="Epochs")
+        logdir = self.logger.logdir
+        jax.profiler.start_trace(os.path.join(logdir, "jax_trace"))
         for epoch_idx in t:
-            train_metrics = self.train_epoch(train_loader, log_prefix="train/")
+            with jax.profiler.StepTraceAnnotation("train_epoch", step_num=epoch_idx):
+                train_metrics = self.train_epoch(train_loader, log_prefix="train/")
+
             self.log_metrics(train_metrics, step=epoch_idx)
             # self.logger.log_metrics(train_metrics, step=epoch_idx)
             self.on_training_epoch_end(epoch_idx)
@@ -380,6 +384,7 @@ class TrainerModule:
                 refresh=True,
             )
         self.wait_for_checkpoint()
+        jax.profiler.stop_trace()
 
         # Test best model if possible
         if test_loader is not None:
