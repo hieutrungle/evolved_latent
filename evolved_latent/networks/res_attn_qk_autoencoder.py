@@ -84,6 +84,7 @@ class ResNetAttentionQKEncoder(nn.Module):
             dropout_rate=0.1,
             deterministic=not train,
             dtype=self.dtype,
+            force_fp32_for_softmax=True,
             normalize_qk=True,
         )(q, k, dropout_rng=dropout_rng)
 
@@ -192,6 +193,7 @@ class ResNetAttentionQKDecoder(nn.Module):
             dropout_rate=0.1,
             deterministic=not train,
             dtype=self.dtype,
+            force_fp32_for_softmax=True,
             normalize_qk=True,
         )(q, k, dropout_rng=dropout_rng)
 

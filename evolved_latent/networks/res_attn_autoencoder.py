@@ -83,6 +83,8 @@ class ResNetAttentionEncoder(nn.Module):
             dropout_rate=0.1,
             deterministic=not train,
             dtype=self.dtype,
+            force_fp32_for_softmax=True,
+            normalize_qk=True,
         )(q, dropout_rng=dropout_rng)
 
         for size in self.mid_sizes:
@@ -189,6 +191,8 @@ class ResNetAttentionDecoder(nn.Module):
             dropout_rate=0.1,
             deterministic=not train,
             dtype=self.dtype,
+            force_fp32_for_softmax=True,
+            normalize_qk=True,
         )(q, dropout_rng=dropout_rng)
         x = jnp.reshape(x, (*x.shape[:-1], 50, 2 * len(self.top_sizes)))
 
