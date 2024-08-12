@@ -229,7 +229,7 @@ class TrainerModule:
             self.train_step = train_step
             self.eval_step = eval_step
         else:
-            self.train_step = jax.jit(train_step)
+            self.train_step = jax.jit(train_step, donate_argnames=("state", "metrics"))
             self.eval_step = jax.jit(eval_step)
 
     @staticmethod
