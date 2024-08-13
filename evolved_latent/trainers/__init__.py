@@ -1,1 +1,2 @@
 from evolved_latent.trainers import autoencoder_trainer
+from evolved_latent.trainers import trainer_module

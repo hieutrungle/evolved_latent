@@ -5,6 +5,8 @@ import pyvista as pv
 import numpy as np
 import glob
 import os
+import flax.linen as nn
+import jax
 
 ######################################################################
 # Tensorflow Data Generator
@@ -210,10 +212,10 @@ def create_data_loaders(
 class FlameGenerator(torch.utils.data.Dataset):
     def __init__(
         self,
-        data_dir,
-        batch_size,
-        data_shape,
-        is_train=True,
+        data_dir: str,
+        batch_size: int,
+        data_shape: Sequence[int],
+        is_train: bool = True,
         **kwargs,
     ):
         super().__init__()
@@ -251,3 +253,54 @@ class FlameGenerator(torch.utils.data.Dataset):
 
     def __len__(self):
         return self.num_files
+
+
+class SequenceGenerator(torch.utils.data.Dataset):
+    def __init__(
+        self,
+        data_dir: str,
+        batch_size: int,
+        data_shape: Sequence[int],
+        is_train: bool = True,
+        **kwargs,
+    ):
+        super().__init__()
+        self.data_dir = data_dir
+        self.batch_size = batch_size
+        self.data_shape = data_shape
+
+        self.filenames = glob.glob(data_dir + "/*.vtk", recursive=True)
+        self.filenames.sort(
+            key=lambda x: int(os.path.splitext(os.path.basename(x))[0].split("_")[-1])
+        )
+        # self.filenames = self.filenames[:88]
+        self.num_files = len(self.filenames)
+
+        if is_train:
+            self.num_files = int(self.num_files * 0.9)
+            self.filenames = self.filenames[: self.num_files]
+        else:
+            self.num_files = int(self.num_files * 0.1)
+            self.filenames = self.filenames[self.num_files :]
+
+    def read_vtk(self, filename):
+        data_ = pv.read(filename)
+        data_ = data_.get_array("-velocity_magnitude")
+        data_ = np.array(data_)
+        data_ = data_.reshape(self.data_shape)
+        data_ = self.normalize(data_)
+        return data_
+
+    def __getitem__(self, i):
+        input_ = self.read_vtk(self.filenames[i])
+        output_ = self.read_vtk(self.filenames[i + 1])
+        return (input_, output_)
+
+    def normalize(self, data):
+        return data / 6.8
+
+    def denormalize(self, data):
+        return data * 6.8
+
+    def __len__(self):
+        return self.num_files - 1
