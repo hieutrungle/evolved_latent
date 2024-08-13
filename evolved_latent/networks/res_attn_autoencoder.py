@@ -76,7 +76,8 @@ class ResNetAttentionEncoder(nn.Module):
         x = jnp.reshape(x, (*x.shape[:-2], -1))
 
         q = x
-        x = nn.MultiHeadAttention(
+        multihead_attn_fn = nn.remat(nn.MultiHeadAttention, prevent_cse=True)
+        x = multihead_attn_fn(
             num_heads=10,
             qkv_features=x.shape[-1],
             out_features=x.shape[-1],
@@ -99,8 +100,9 @@ class ResNetAttentionEncoder(nn.Module):
             x = self.activation(x)
             x = nn.GroupNorm(num_groups=1, dtype=self.dtype)(x)
 
+        down_res_block_fn = nn.remat(DownResidualBlock, prevent_cse=True)
         for size in self.bottom_sizes:
-            x = DownResidualBlock(
+            x = down_res_block_fn(
                 size,
                 (3, 3),
                 (2, 2),
@@ -159,8 +161,9 @@ class ResNetAttentionDecoder(nn.Module):
 
         x = jnp.reshape(x, (x.shape[0], 2, 2, -1))
 
+        up_res_block_fn = nn.remat(UpResidualBlock, prevent_cse=True)
         for size in self.bottom_sizes:
-            x = UpResidualBlock(
+            x = up_res_block_fn(
                 size,
                 (3, 3),
                 (2, 2),
@@ -184,7 +187,8 @@ class ResNetAttentionDecoder(nn.Module):
             x = nn.GroupNorm(num_groups=1, dtype=self.dtype)(x)
 
         q = x
-        x = nn.MultiHeadAttention(
+        multihead_attn_fn = nn.remat(nn.MultiHeadAttention, prevent_cse=True)
+        x = multihead_attn_fn(
             num_heads=10,
             qkv_features=x.shape[-1],
             out_features=x.shape[-1],

@@ -71,7 +71,8 @@ class ResNetNormEncoder(nn.Module):
             x = self.activation(x)
         x = jnp.reshape(x, (*x.shape[:-2], -1))
 
-        x = nn.Dense(x.shape[-1], dtype=self.dtype)(x)
+        dense_fn = nn.remat(nn.Dense, prevent_cse=True)
+        x = dense_fn(x.shape[-1], dtype=self.dtype)(x)
 
         for size in self.mid_sizes:
             x = DownResidualBlock(
@@ -85,8 +86,9 @@ class ResNetNormEncoder(nn.Module):
             x = self.activation(x)
             x = nn.GroupNorm(num_groups=1, dtype=self.dtype)(x)
 
+        down_res_block_fn = nn.remat(DownResidualBlock, prevent_cse=True)
         for size in self.bottom_sizes:
-            x = DownResidualBlock(
+            x = down_res_block_fn(
                 size,
                 (3, 3),
                 (2, 2),
@@ -142,8 +144,9 @@ class ResNetNormDecoder(nn.Module):
 
         x = jnp.reshape(x, (x.shape[0], 2, 2, -1))
 
+        up_res_block_fn = nn.remat(UpResidualBlock, prevent_cse=True)
         for size in self.bottom_sizes:
-            x = UpResidualBlock(
+            x = up_res_block_fn(
                 size,
                 (3, 3),
                 (2, 2),
@@ -166,7 +169,8 @@ class ResNetNormDecoder(nn.Module):
             x = self.activation(x)
             x = nn.GroupNorm(num_groups=1, dtype=self.dtype)(x)
 
-        x = nn.Dense(x.shape[-1], dtype=self.dtype)(x)
+        dense_fn = nn.remat(nn.Dense, prevent_cse=True)
+        x = dense_fn(x.shape[-1], dtype=self.dtype)(x)
         x = jnp.reshape(x, (*x.shape[:-1], 50, 2 * len(self.top_sizes)))
 
         for size in self.top_sizes:
