@@ -189,13 +189,17 @@ def create_data_loaders(
     if not isinstance(train, (list, tuple)):
         train = [train for _ in datasets]
     for dataset, is_train in zip(datasets, train):
+        if not is_train:
+            num_workers_ = (num_workers // 4) or 1
+        else:
+            num_workers_ = num_workers
         loader = torch.utils.data.DataLoader(
             dataset,
             batch_size=batch_size,
             shuffle=is_train,
             drop_last=is_train,
             collate_fn=numpy_collate,
-            num_workers=num_workers,
+            num_workers=num_workers_,
             # persistent_workers=is_train,
             generator=torch.Generator().manual_seed(seed),
         )
