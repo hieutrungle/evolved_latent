@@ -229,7 +229,7 @@ class TrainerModule:
             self.train_step = train_step
             self.eval_step = eval_step
         else:
-            self.train_step = jax.jit(train_step, donate_argnames=("state", "metrics"))
+            self.train_step = jax.jit(train_step, donate_argnames=("state",))
             self.eval_step = jax.jit(eval_step)
 
     @staticmethod
@@ -353,33 +353,31 @@ class TrainerModule:
         train_metrics = {"train/loss": 0.0}
         t = self.tracker(range(1, num_epochs + 1), desc="Epochs")
         logdir = self.logger.logdir
-        jax.profiler.start_trace(os.path.join(logdir, "jax_trace"))
+        # jax.profiler.start_trace(os.path.join(logdir, "jax_trace"))
         for epoch_idx in t:
-            with jax.profiler.StepTraceAnnotation("train_epoch", step_num=epoch_idx):
-                train_metrics = self.train_epoch(train_loader, log_prefix="train/")
+            # with jax.profiler.StepTraceAnnotation("train_epoch", step_num=epoch_idx):
+            train_metrics = self.train_epoch(train_loader, log_prefix="train/")
 
             self.log_metrics(train_metrics, step=epoch_idx)
             # self.logger.log_metrics(train_metrics, step=epoch_idx)
             self.on_training_epoch_end(epoch_idx)
 
-            with jax.profiler.StepTraceAnnotation(
-                "validation_epoch", step_num=epoch_idx
-            ):
-                # Validation every N epochs
-                if epoch_idx % self.check_val_every_n_epoch == 0:
-                    eval_metrics = self.eval_model(val_loader, log_prefix="val/")
-                    self.on_validation_epoch_end(epoch_idx, eval_metrics, val_loader)
-                    self.log_metrics(eval_metrics, step=epoch_idx)
-                    # self.logger.log_metrics(eval_metrics, step=epoch_idx)
-                    self.save_metrics(
-                        f"eval_epoch_{str(epoch_idx).zfill(3)}", eval_metrics
-                    )
-                    # Save best model
-                    if self.is_new_model_better(eval_metrics, best_eval_metrics):
-                        best_eval_metrics = eval_metrics
-                        best_eval_metrics.update(train_metrics)
-                        self.save_model(step=epoch_idx)
-                        self.save_metrics("best_eval", eval_metrics)
+            # with jax.profiler.StepTraceAnnotation(
+            #     "validation_epoch", step_num=epoch_idx
+            # ):
+            # Validation every N epochs
+            if epoch_idx % self.check_val_every_n_epoch == 0:
+                eval_metrics = self.eval_model(val_loader, log_prefix="val/")
+                self.on_validation_epoch_end(epoch_idx, eval_metrics, val_loader)
+                self.log_metrics(eval_metrics, step=epoch_idx)
+                # self.logger.log_metrics(eval_metrics, step=epoch_idx)
+                self.save_metrics(f"eval_epoch_{str(epoch_idx).zfill(3)}", eval_metrics)
+                # Save best model
+                if self.is_new_model_better(eval_metrics, best_eval_metrics):
+                    best_eval_metrics = eval_metrics
+                    best_eval_metrics.update(train_metrics)
+                    self.save_model(step=epoch_idx)
+                    self.save_metrics("best_eval", eval_metrics)
 
             t.set_postfix(
                 {
@@ -389,7 +387,7 @@ class TrainerModule:
                 refresh=True,
             )
         self.wait_for_checkpoint()
-        jax.profiler.stop_trace()
+        # jax.profiler.stop_trace()
 
         # Test best model if possible
         if test_loader is not None:
