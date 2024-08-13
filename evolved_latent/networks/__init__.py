@@ -2,8 +2,11 @@
 This module contains the code for the networks used in the project.
 """
 
-from .baseline_autoencoder import BaselineAutoencoder
-from .resnet_norm_autoencoder import ResNetNormAutoencoder
-from .resnet_autoencoder import ResNetAutoencoder
-from .res_attn_autoencoder import ResNetAttentionAutoencoder
-from .res_attn_qk_autoencoder import ResNetAttentionQKAutoencoder
+from .autoencoder_baseline import BaselineAutoencoder
+from .autoencoder_resnet_norm import ResNetNormAutoencoder
+from .autoencoder_resnet import ResNetAutoencoder
+from .autoencoder_res_attn import ResNetAttentionAutoencoder
+from .autoencoder_res_attn_qk import ResNetAttentionQKAutoencoder
+
+# Seq2Seq
+from .seq2seq_transformer import Seq2SeqTransformer
