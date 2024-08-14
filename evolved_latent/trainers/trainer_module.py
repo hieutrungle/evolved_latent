@@ -659,7 +659,7 @@ class TrainerModule:
         print()
         print(f"*" * 80)
         print(f"Class variables of {self.__class__.__name__}:")
-        skipped_keys = ["state", "variables"]
+        skipped_keys = ["state", "variables", "encoder", "decoder"]
 
         def check_for_skipped_keys(key):
             for skip_key in skipped_keys:
