@@ -65,12 +65,12 @@ def main():
         raise ValueError(f"Autoencoder type {args.autoencoder_type} not supported.")
 
     evo_hparams = {
-        "hidden_size": 128,
+        "hidden_size": args.evo_hidden_size,
         "max_seq_len": 200,
-        "num_heads": 8,
-        "num_layers": 6,
+        "num_heads": args.evo_num_heads,
+        "num_layers": args.evo_num_layers,
         "num_outputs": 1,
-        "causal_mask": True,
+        "causal_mask": False,
         "dtype": "bfloat16",
     }
     if args.evo_type == "transformer":
@@ -121,6 +121,7 @@ def train_evo(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hpara
     if "batch_stats" in variables:
         variables["batch_stats"] = state_dict["batch_stats"]
     autoencoder = autoencoder.bind(variables)
+    print(f"Autoencoder: {autoencoder}")
     encoder = autoencoder.encoder
 
     # Data loaders
@@ -167,10 +168,6 @@ def train_evo(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hpara
         },
         "check_val_every_n_epoch": 1,
     }
-
-    # model = evo_class.create(**model_hparams)
-    # print(model.tabulate(jax.random.PRNGKey(0), exmp_input, train=True))
-    # exit()
 
     trainer_config["logger_params"]["log_name"] = (
         trainer_config["model_class"].__name__ + "_" + current_time
@@ -256,6 +253,9 @@ def parse_agrs():
     parser.add_argument("--command", "-cmd", type=str, required=True)
     parser.add_argument("--autoencoder_type", type=str, required=True, default="resnet")
     parser.add_argument("--evo_type", type=str, default="transformer")
+    parser.add_argument("--evo_hidden_size", type=int, default=128)
+    parser.add_argument("--evo_num_heads", type=int, default=8)
+    parser.add_argument("--evo_num_layers", type=int, default=6)
     parser.add_argument("--autoencoder_checkpoint", type=str, default=None)
     parser.add_argument("--num_epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=4)
