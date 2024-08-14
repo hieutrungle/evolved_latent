@@ -1,23 +1,41 @@
 from typing import Any, Tuple
+import flax.linen
 import jax
 from jax import numpy as jnp
 from evolved_latent.trainers.trainer_module import TrainerModule
+import flax
 
 # Type aliases
 PyTree = Any
 
 
-class Seq2SeqTrainer(TrainerModule):
+class EvolvedLatentTrainer(TrainerModule):
 
-    def __init__(self, **kwargs):
+    def __init__(self, binded_encoder: flax.linen.Module, **kwargs):
         super().__init__(**kwargs)
+        self.binded_encoder = binded_encoder
+        # self.encoder_aplly_fn = binded_encoder.apply
+        # self.encoder_variables = binded_encoder.variables
+        # print(f"encoder_variables: {self.encoder_variables}")
 
     def create_step_functions(self):
 
-        # TODO: Implement the following functions for Seq2SeqTrainer.
-
         def mse_loss(params, batch, train, rng_key):
             x, y = batch
+            x = self.binded_encoder.apply(
+                {"params": self.binded_encoder.variables["params"]},
+                x,
+                train=train,
+                rngs={"dropout": rng_key},
+            )
+            y = self.binded_encoder.apply(
+                {"params": self.binded_encoder.variables["params"]},
+                y,
+                train=train,
+                rngs={"dropout": rng_key},
+            )
+            x = jnp.expand_dims(x, axis=-1)
+            y = jnp.expand_dims(y, axis=-1)
             pred = self.model.apply(
                 {"params": params}, x, train=train, rngs={"dropout": rng_key}
             )

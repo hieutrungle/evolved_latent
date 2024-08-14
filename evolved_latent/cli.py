@@ -125,17 +125,20 @@ def train_seq2seq(args):
 
     # Trainer
     current_time = time.strftime("%Y%m%d-%H%M%S")
-    exmp_input = jax.random.normal(jax.random.PRNGKey(args.seed), (1, *data_shape))
+    exmp_input = encoder(exmp_input)
+    exmp_input = jnp.expand_dims(exmp_input, axis=-1)
+    model_hparams = {
+        "hidden_size": 512,
+        "max_seq_len": 200,
+        "num_heads": 8,
+        "num_layers": 4,
+        "num_outputs": 1,
+        "causal_mask": True,
+        "dtype": "bfloat16",
+    }
     trainer_config = {
         # "model_class": autoencoder.EvolvedAutoencoder,
-        "model_hparams": {
-            "top_sizes": (1, 2, 4),
-            "mid_sizes": (200, 200, 400),
-            "bottom_sizes": (400, 512),
-            "dense_sizes": (1024, 256, 64),
-            "activation": "gelu",
-            "dtype": "bfloat16",
-        },
+        "model_hparams": model_hparams,
         "optimizer_hparams": {
             "optimizer": "adamw",
             "lr": 1e-3,
@@ -151,13 +154,18 @@ def train_seq2seq(args):
     }
 
     if args.seq2seq_type == "transformer":
-        seq2seq_class = networks.seq2seq_transformer.TransformerSeq2Seq
+        seq2seq_class = networks.evolved_latent_transformer.EvolvedLatentTransformer
+    else:
+        raise ValueError(f"EvolvedLatent type {args.seq2seq_type} not supported.")
 
-    trainer_config["model_class"] = autoencoder_class
+    trainer_config["model_class"] = seq2seq_class
     trainer_config["logger_params"]["log_name"] = (
         trainer_config["model_class"].__name__ + "_" + current_time
     )
-    trainer = trainers.autoencoder_trainer.AutoencoderTrainer(**trainer_config)
+
+    trainer = trainers.evolved_latent_trainer.EvolvedLatentTrainer(
+        binded_encoder=encoder, **trainer_config
+    )
     trainer.print_class_variables()
 
     print(f"*" * 80)
