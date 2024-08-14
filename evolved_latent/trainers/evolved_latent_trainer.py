@@ -11,33 +11,31 @@ PyTree = Any
 
 class EvolvedLatentTrainer(TrainerModule):
 
-    def __init__(self, binded_encoder: flax.linen.Module, **kwargs):
+    def __init__(self, binded_autoencoder: flax.linen.Module, **kwargs):
         super().__init__(**kwargs)
-        self.binded_encoder = binded_encoder
-        # self.encoder_aplly_fn = binded_encoder.apply
-        # self.encoder_variables = binded_encoder.variables
-        # print(f"encoder_variables: {self.encoder_variables}")
+        self.binded_autoencoder = binded_autoencoder
 
     def create_step_functions(self):
 
         def mse_loss(params, batch, train, rng_key):
             x, y = batch
-            x = self.binded_encoder.apply(
-                {"params": self.binded_encoder.variables["params"]},
+            x = self.binded_autoencoder.encoder.apply(
+                {"params": self.binded_autoencoder.encoder.variables["params"]},
                 x,
                 train=train,
                 rngs={"dropout": rng_key},
             )
-            y = self.binded_encoder.apply(
-                {"params": self.binded_encoder.variables["params"]},
-                y,
-                train=train,
-                rngs={"dropout": rng_key},
-            )
+
             x = jnp.expand_dims(x, axis=-1)
-            y = jnp.expand_dims(y, axis=-1)
             pred = self.model.apply(
                 {"params": params}, x, train=train, rngs={"dropout": rng_key}
+            )
+            pred = jnp.squeeze(pred, axis=-1)
+            pred = self.binded_autoencoder.decoder.apply(
+                {"params": self.binded_autoencoder.decoder.variables["params"]},
+                pred,
+                train=train,
+                rngs={"dropout": rng_key},
             )
             axes = tuple(range(1, len(y.shape)))
             loss = jnp.sum(jnp.mean((pred - y) ** 2, axis=axes))
