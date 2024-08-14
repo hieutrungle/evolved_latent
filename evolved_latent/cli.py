@@ -32,16 +32,6 @@ def main():
     print(f"Number of GPUs: {jax.device_count(backend='gpu')}")
     print("Device:", jax.devices()[0])
 
-    if args.command == "train_autoencoder":
-        train_autoencoder(args)
-
-    elif args.command == "train_evo":
-        if args.autoencoder_checkpoint is None:
-            raise ValueError("Autoencoder checkpoint must be provided.")
-        train_evo(args)
-
-
-def train_evo(args):
     lib_dir = importlib.resources.files(evolved_latent)
     source_dir = os.path.dirname(lib_dir)
     data_dir = os.path.join(source_dir, "local_data", "vel_field_vtk")
@@ -51,7 +41,6 @@ def train_evo(args):
     batch_size = args.batch_size
     workers = args.workers
 
-    # Load the pretrained autoencoder model
     autoencoder_hparams = {
         "top_sizes": (1, 2, 4),
         "mid_sizes": (200, 200, 400),
@@ -75,6 +64,39 @@ def train_evo(args):
     else:
         raise ValueError(f"Autoencoder type {args.autoencoder_type} not supported.")
 
+    evo_hparams = {
+        "hidden_size": 512,
+        "max_seq_len": 200,
+        "num_heads": 8,
+        "num_layers": 6,
+        "num_outputs": 1,
+        "causal_mask": True,
+        "dtype": "bfloat16",
+    }
+    if args.evo_type == "transformer":
+        evo_class = networks.evolved_latent_transformer.EvolvedLatentTransformer
+    else:
+        raise ValueError(f"EvolvedLatent type {args.evo_type} not supported.")
+
+    if args.command == "train_autoencoder":
+        train_autoencoder(args, autoencoder_class, autoencoder_hparams)
+
+    elif args.command == "train_evo":
+        if args.autoencoder_checkpoint is None:
+            raise ValueError("Autoencoder checkpoint must be provided.")
+        train_evo(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hparams)
+    else:
+        raise ValueError(f"Command {args.command} not supported.")
+
+
+def train_evo(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hparams):
+    lib_dir = importlib.resources.files(evolved_latent)
+    source_dir = os.path.dirname(lib_dir)
+    data_dir = os.path.join(source_dir, "local_data", "vel_field_vtk")
+
+    data_shape = (100, 100, 200, 1)
+
+    # Load autoencoder
     autoencoder = autoencoder_class.create(**autoencoder_hparams)
     model_rng = jax.random.PRNGKey(args.seed)
     model_rng, init_rng = jax.random.split(model_rng)
@@ -103,13 +125,13 @@ def train_evo(args):
     # Data loaders
     train_ds = dataloader.SequenceGenerator(
         data_dir=data_dir,
-        batch_size=batch_size,
+        batch_size=args.batch_size,
         data_shape=data_shape,
     )
 
     val_ds = dataloader.SequenceGenerator(
         data_dir=data_dir,
-        batch_size=batch_size,
+        batch_size=args.batch_size,
         data_shape=data_shape,
         is_train=False,
     )
@@ -118,8 +140,8 @@ def train_evo(args):
         train_ds,
         val_ds,
         train=[True, False],
-        batch_size=batch_size,
-        num_workers=workers,
+        batch_size=args.batch_size,
+        num_workers=args.workers,
         seed=args.seed,
     )
 
@@ -127,17 +149,9 @@ def train_evo(args):
     current_time = time.strftime("%Y%m%d-%H%M%S")
     exmp_input = encoder(exmp_input)
     exmp_input = jnp.expand_dims(exmp_input, axis=-1)
-    model_hparams = {
-        "hidden_size": 512,
-        "max_seq_len": 200,
-        "num_heads": 8,
-        "num_layers": 6,
-        "num_outputs": 1,
-        "causal_mask": True,
-        "dtype": "bfloat16",
-    }
+    model_hparams = evo_hparams
     trainer_config = {
-        # "model_class": autoencoder.EvolvedAutoencoder,
+        "model_class": evo_class,
         "model_hparams": model_hparams,
         "optimizer_hparams": {
             "optimizer": "adamw",
@@ -153,47 +167,39 @@ def train_evo(args):
         "check_val_every_n_epoch": 1,
     }
 
-    if args.evo_type == "transformer":
-        seq2seq_class = networks.evolved_latent_transformer.EvolvedLatentTransformer
-    else:
-        raise ValueError(f"EvolvedLatent type {args.evo_type} not supported.")
-
-    trainer_config["model_class"] = seq2seq_class
     trainer_config["logger_params"]["log_name"] = (
         trainer_config["model_class"].__name__ + "_" + current_time
     )
 
     trainer = trainers.evolved_latent_trainer.EvolvedLatentTrainer(
-        binded_encoder=encoder, **trainer_config
+        binded_autoencoder=autoencoder, **trainer_config
     )
     trainer.print_class_variables()
 
     print(f"*" * 80)
     print(f"Training {trainer.model_class.__name__} model")
     eval_metrics = trainer.train_model(
-        train_loader, val_loader, val_loader, num_epochs=num_epochs
+        train_loader, val_loader, val_loader, num_epochs=args.num_epochs
     )
     print(f"Eval metrics: \n{eval_metrics}")
 
 
-def train_autoencoder(args):
+def train_autoencoder(args, autoencoder_class, autoencoder_hparams):
 
     lib_dir = importlib.resources.files(evolved_latent)
     source_dir = os.path.dirname(lib_dir)
     data_dir = os.path.join(source_dir, "local_data", "vel_field_vtk")
 
     data_shape = (100, 100, 200, 1)
-    num_epochs = args.num_epochs
-    batch_size = args.batch_size
-    workers = args.workers
+
     train_ds = dataloader.FlameGenerator(
         data_dir,
-        batch_size=batch_size,
+        batch_size=args.batch_size,
         data_shape=data_shape,
     )
     val_ds = dataloader.FlameGenerator(
         data_dir,
-        batch_size=batch_size,
+        batch_size=args.batch_size,
         data_shape=data_shape,
         is_train=False,
     )
@@ -202,23 +208,16 @@ def train_autoencoder(args):
         train_ds,
         val_ds,
         train=[True, False],
-        batch_size=batch_size,
-        num_workers=workers,
+        batch_size=args.batch_size,
+        num_workers=args.workers,
         seed=args.seed,
     )
 
     current_time = time.strftime("%Y%m%d-%H%M%S")
     exmp_input = jax.random.normal(jax.random.PRNGKey(args.seed), (1, *data_shape))
     trainer_config = {
-        # "model_class": autoencoder.EvolvedAutoencoder,
-        "model_hparams": {
-            "top_sizes": (1, 2, 4),
-            "mid_sizes": (200, 200, 400),
-            "bottom_sizes": (400, 512),
-            "dense_sizes": (1024, 256, 64),
-            "activation": "gelu",
-            "dtype": "bfloat16",
-        },
+        "model_class": autoencoder_class,
+        "model_hparams": autoencoder_hparams,
         "optimizer_hparams": {
             "optimizer": "adamw",
             "lr": 1e-3,
@@ -232,23 +231,6 @@ def train_autoencoder(args):
         },
         "check_val_every_n_epoch": 1,
     }
-
-    if args.autoencoder_type == "baseline":
-        autoencoder_class = networks.autoencoder_baseline.BaselineAutoencoder
-    elif args.autoencoder_type == "resnet":
-        autoencoder_class = networks.autoencoder_resnet.ResNetAutoencoder
-    elif args.autoencoder_type == "resnet_norm":
-        autoencoder_class = networks.autoencoder_resnet_norm.ResNetNormAutoencoder
-    elif args.autoencoder_type == "res_attn":
-        autoencoder_class = networks.autoencoder_res_attn.ResNetAttentionAutoencoder
-    elif args.autoencoder_type == "res_attn_qk":
-        autoencoder_class = (
-            networks.autoencoder_res_attn_qk.ResNetAttentionQKAutoencoder
-        )
-    else:
-        raise ValueError(f"Autoencoder type {args.autoencoder_type} not supported.")
-
-    trainer_config["model_class"] = autoencoder_class
     trainer_config["logger_params"]["log_name"] = (
         trainer_config["model_class"].__name__ + "_" + current_time
     )
@@ -258,7 +240,7 @@ def train_autoencoder(args):
     print(f"*" * 80)
     print(f"Training {trainer.model_class.__name__} model")
     eval_metrics = trainer.train_model(
-        train_loader, val_loader, val_loader, num_epochs=num_epochs
+        train_loader, val_loader, val_loader, num_epochs=args.num_epochs
     )
     print(f"Eval metrics: \n{eval_metrics}")
 
