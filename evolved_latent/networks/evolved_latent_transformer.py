@@ -30,11 +30,13 @@ class EvolvedLatentTransformer(nn.Module):
             mask = nn.make_causal_mask(x, dtype=jnp.bool_)
 
         x = nn.Dense(self.hidden_size, dtype=self.dtype, name="input_layer")(x)
-        pos_emb = self.param(
-            "pos_emb",
-            nn.initializers.normal(stddev=0.02),
-            (self.max_seq_len, self.hidden_size),
-        )
+        pos = jnp.arange(x.shape[1], dtype=jnp.int16)
+        pos_emb = nn.Embed(
+            num_embeddings=self.max_seq_len,
+            features=self.hidden_size,
+            dtype=self.dtype,
+            name="pos_emb",
+        )(pos)
         pos_emb = pos_emb.astype(self.dtype)
         x = x + pos_emb[None, : x.shape[1]]
 
@@ -42,9 +44,9 @@ class EvolvedLatentTransformer(nn.Module):
         block_fn = functools.partial(
             nn.MultiHeadAttention,
             num_heads=self.num_heads,
-            qkv_features=x.shape[-1],
+            qkv_features=x.shape[-1] * 4,
             out_features=x.shape[-1],
-            dropout_rate=0.1,
+            dropout_rate=0.05,
             deterministic=not train,
             dtype=self.dtype,
             force_fp32_for_softmax=True,

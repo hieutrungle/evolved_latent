@@ -65,7 +65,7 @@ def main():
         raise ValueError(f"Autoencoder type {args.autoencoder_type} not supported.")
 
     evo_hparams = {
-        "hidden_size": 512,
+        "hidden_size": 128,
         "max_seq_len": 200,
         "num_heads": 8,
         "num_layers": 6,
@@ -85,6 +85,7 @@ def main():
         if args.autoencoder_checkpoint is None:
             raise ValueError("Autoencoder checkpoint must be provided.")
         train_evo(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hparams)
+
     else:
         raise ValueError(f"Command {args.command} not supported.")
 
@@ -166,6 +167,10 @@ def train_evo(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hpara
         },
         "check_val_every_n_epoch": 1,
     }
+
+    # model = evo_class.create(**model_hparams)
+    # print(model.tabulate(jax.random.PRNGKey(0), exmp_input, train=True))
+    # exit()
 
     trainer_config["logger_params"]["log_name"] = (
         trainer_config["model_class"].__name__ + "_" + current_time
