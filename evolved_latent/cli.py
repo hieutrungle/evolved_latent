@@ -35,13 +35,13 @@ def main():
     if args.command == "train_autoencoder":
         train_autoencoder(args)
 
-    elif args.command == "train_seq2seq":
+    elif args.command == "train_evo":
         if args.autoencoder_checkpoint is None:
             raise ValueError("Autoencoder checkpoint must be provided.")
-        train_seq2seq(args)
+        train_evo(args)
 
 
-def train_seq2seq(args):
+def train_evo(args):
     lib_dir = importlib.resources.files(evolved_latent)
     source_dir = os.path.dirname(lib_dir)
     data_dir = os.path.join(source_dir, "local_data", "vel_field_vtk")
@@ -131,7 +131,7 @@ def train_seq2seq(args):
         "hidden_size": 512,
         "max_seq_len": 200,
         "num_heads": 8,
-        "num_layers": 4,
+        "num_layers": 6,
         "num_outputs": 1,
         "causal_mask": True,
         "dtype": "bfloat16",
@@ -153,10 +153,10 @@ def train_seq2seq(args):
         "check_val_every_n_epoch": 1,
     }
 
-    if args.seq2seq_type == "transformer":
+    if args.evo_type == "transformer":
         seq2seq_class = networks.evolved_latent_transformer.EvolvedLatentTransformer
     else:
-        raise ValueError(f"EvolvedLatent type {args.seq2seq_type} not supported.")
+        raise ValueError(f"EvolvedLatent type {args.evo_type} not supported.")
 
     trainer_config["model_class"] = seq2seq_class
     trainer_config["logger_params"]["log_name"] = (
@@ -268,7 +268,7 @@ def parse_agrs():
     # parser.add_argument("--config_file", "-dcfg", type=str, required=True)
     parser.add_argument("--command", "-cmd", type=str, required=True)
     parser.add_argument("--autoencoder_type", type=str, required=True, default="resnet")
-    parser.add_argument("--seq2seq_type", type=str, default="transformer")
+    parser.add_argument("--evo_type", type=str, default="transformer")
     parser.add_argument("--autoencoder_checkpoint", type=str, default=None)
     parser.add_argument("--num_epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=4)
