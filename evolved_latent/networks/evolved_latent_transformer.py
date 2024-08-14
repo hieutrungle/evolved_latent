@@ -8,6 +8,10 @@ from evolved_latent.networks.network_utils import (
     DType,
     _str_to_dtype,
 )
+from evolved_latent.networks.common_blocks import (
+    EvoPositionalEmbedding,
+    TransformerEncoderBlock,
+)
 import functools
 
 
@@ -26,31 +30,26 @@ class EvolvedLatentTransformer(nn.Module):
     def __call__(
         self, x: jax.Array, mask: jax.Array | None = None, train: bool = True
     ) -> jax.Array:
+
+        x = EvoPositionalEmbedding(
+            hidden_size=self.hidden_size,
+            max_seq_len=self.max_seq_len,
+            dtype=self.dtype,
+        )(x)
+
         if mask is None and self.causal_mask:
             mask = nn.make_causal_mask(x, dtype=jnp.bool_)
 
-        x = nn.Dense(self.hidden_size, dtype=self.dtype, name="input_layer")(x)
-        pos = jnp.arange(x.shape[1], dtype=jnp.int16)
-        pos_emb = nn.Embed(
-            num_embeddings=self.max_seq_len,
-            features=self.hidden_size,
-            dtype=self.dtype,
-            name="pos_emb",
-        )(pos)
-        pos_emb = pos_emb.astype(self.dtype)
-        x = x + pos_emb[None, : x.shape[1]]
-
         # Transformer blocks.
         block_fn = functools.partial(
-            nn.MultiHeadAttention,
+            TransformerEncoderBlock,
+            hidden_size=self.hidden_size,
             num_heads=self.num_heads,
-            qkv_features=x.shape[-1] * 4,
-            out_features=x.shape[-1],
-            dropout_rate=0.05,
-            deterministic=not train,
+            causal_mask=self.causal_mask,
             dtype=self.dtype,
-            force_fp32_for_softmax=True,
-            normalize_qk=True,
+            dropout_rate=0.05,
+            mask=mask,
+            train=train,
         )
         block_fn = nn.remat(block_fn, prevent_cse=False)
         block = block_fn(name="block")
@@ -62,6 +61,11 @@ class EvolvedLatentTransformer(nn.Module):
         )(block, x, ())
 
         # Output layer.
+        x = nn.Dense(
+            features=self.hidden_size // 2,
+            dtype=self.dtype,
+            name="pre_output_layer",
+        )(x)
         x = nn.LayerNorm(dtype=self.dtype, name="post_norm")(x)
         x = nn.Dense(
             features=self.num_outputs,
