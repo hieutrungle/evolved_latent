@@ -25,18 +25,26 @@ class EvolvedLatentTrainer(TrainerModule):
                 train=train,
                 rngs={"dropout": rng_key},
             )
-
-            x = jnp.expand_dims(x, axis=-1)
-            pred = self.model.apply(
-                {"params": params}, x, train=train, rngs={"dropout": rng_key}
-            )
-            pred = jnp.squeeze(pred, axis=-1)
-            pred = self.binded_autoencoder.decoder.apply(
-                {"params": self.binded_autoencoder.decoder.variables["params"]},
-                pred,
+            y = self.binded_autoencoder.encoder.apply(
+                {"params": self.binded_autoencoder.encoder.variables["params"]},
+                y,
                 train=train,
                 rngs={"dropout": rng_key},
             )
+
+            x = jnp.expand_dims(x, axis=-1)
+            y = jnp.expand_dims(y, axis=-1)
+
+            pred = self.model.apply(
+                {"params": params}, x, train=train, rngs={"dropout": rng_key}
+            )
+            # pred = jnp.squeeze(pred, axis=-1)
+            # pred = self.binded_autoencoder.decoder.apply(
+            #     {"params": self.binded_autoencoder.decoder.variables["params"]},
+            #     pred,
+            #     train=train,
+            #     rngs={"dropout": rng_key},
+            # )
             axes = tuple(range(1, len(y.shape)))
             loss = jnp.sum(jnp.mean((pred - y) ** 2, axis=axes))
             return loss
