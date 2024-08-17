@@ -151,6 +151,20 @@ def evolve_latent(args, evo_class, evo_hparams, autoencoder_class, autoencoder_h
     evo_model = evo_model.bind(variables)
     del variables
 
+    # Combine models
+    key, rng_key = jax.random.split(key)
+    exmp_input = jax.random.normal(init_key, (1, *data_shape))
+    combined_model = networks.evo_ae_latent.EvoAutoencoder.create(
+        binded_autoencoder=autoencoder, binded_evolver=evo_model, dtype="bfloat16"
+    )
+    print(f"Combined model: {combined_model.__class__.__name__}")
+    print(combined_model.tabulate(init_key, exmp_input, train=True))
+
+    variables = combined_model.init(init_key, exmp_input, train=True)
+    variables["params"]["encoder"] = autoencoder.encoder.variables["params"]
+    variables["params"]["decoder"] = autoencoder.decoder.variables["params"]
+    variables["params"]["evolver"] = evo_model.variables["params"]
+
     val_ds = dataloader.SequenceGenerator(
         data_dir=data_dir,
         batch_size=args.batch_size,
@@ -165,23 +179,10 @@ def evolve_latent(args, evo_class, evo_hparams, autoencoder_class, autoencoder_h
         seed=args.seed,
     )
 
-    key, rng_key = jax.random.split(key)
-
     def predict(x):
-        x = autoencoder.encoder.apply(
-            {"params": autoencoder.encoder.variables["params"]},
+        y_pred = combined_model.apply(
+            {"params": variables["params"]},
             x,
-            train=False,
-            rngs={"dropout": rng_key},
-        )
-        x = jnp.expand_dims(x, axis=-1)
-        pred = evo_model.apply(
-            {"params": evo_model.variables["params"]}, x, train=False
-        )
-        pred = jnp.squeeze(pred, axis=-1)
-        y_pred = autoencoder.decoder.apply(
-            {"params": autoencoder.decoder.variables["params"]},
-            pred,
             train=False,
             rngs={"dropout": rng_key},
         )
@@ -201,7 +202,8 @@ def evolve_latent(args, evo_class, evo_hparams, autoencoder_class, autoencoder_h
             x = inputs[j : j + 1]
             y = outputs[j : j + 1]
             y_pred = predict_fn(x)
-            mse = calculate_mse_fn(y, y_pred)
+            mse = calculate_mse_fn(val_ds.denormalize(y), val_ds.denormalize(y_pred))
+            # mse = calculate_mse_fn(y, y_pred)
             print(f"Batch {i}, Input {j}, MSE: {mse}")
         print()
 
