@@ -9,4 +9,5 @@ from evolved_latent.networks import (
     autoencoder_baseline,
     autoencoder_resnet,
     evolved_latent_transformer,
+    evo_ae_latent,
 )

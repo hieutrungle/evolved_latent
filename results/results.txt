@@ -1,0 +1,62 @@
+Number of GPUs: 1
+Device: cuda:0
+Model: ResNetNormAutoencoder(
+    # attributes
+    encoder_config = {'top_sizes': (2, 4), 'mid_sizes': (200, 400), 'bottom_sizes': (512,), 'dense_sizes': (256, 64), 'activation': 'gelu', 'dtype': 'bfloat16'}
+    decoder_config = {'top_sizes': (2, 1), 'mid_sizes': (200, 200), 'bottom_sizes': (400,), 'dense_sizes': (256, 1024), 'activation': 'gelu', 'dtype': 'bfloat16'}
+)
+Model: EvolvedLatentTransformer(
+    # attributes
+    hidden_size = 256
+    num_heads = 8
+    num_outputs = 1
+    max_seq_len = 200
+    num_layers = 3
+    causal_mask = False
+    dtype = bfloat16
+)
+Batch 0, Input 0, MSE: 0.06820296496152878
+Batch 0, Input 1, MSE: 0.06812699139118195
+Batch 0, Input 2, MSE: 0.06807643175125122
+Batch 0, Input 3, MSE: 0.0680035874247551
+Batch 0, Input 4, MSE: 0.0679716169834137
+Batch 0, Input 5, MSE: 0.06793126463890076
+Batch 0, Input 6, MSE: 0.06789987534284592
+Batch 0, Input 7, MSE: 0.06791005283594131
+Batch 0, Input 8, MSE: 0.06796281784772873
+Batch 0, Input 9, MSE: 0.06795671582221985
+Batch 0, Input 10, MSE: 0.06804083287715912
+Batch 0, Input 11, MSE: 0.06810660660266876
+Batch 0, Input 12, MSE: 0.06817687302827835
+Batch 0, Input 13, MSE: 0.06825755536556244
+Batch 0, Input 14, MSE: 0.06829677522182465
+Batch 0, Input 15, MSE: 0.0683935284614563
+Batch 0, Input 16, MSE: 0.06847478449344635
+Batch 0, Input 17, MSE: 0.06853898614645004
+Batch 0, Input 18, MSE: 0.0686345025897026
+Batch 0, Input 19, MSE: 0.06871011853218079
+Batch 0, Input 20, MSE: 0.06876222044229507
+Batch 0, Input 21, MSE: 0.0687926709651947
+Batch 0, Input 22, MSE: 0.06882490962743759
+Batch 0, Input 23, MSE: 0.06881620734930038
+Batch 0, Input 24, MSE: 0.06888213008642197
+Batch 0, Input 25, MSE: 0.06893403083086014
+Batch 0, Input 26, MSE: 0.06894098222255707
+Batch 0, Input 27, MSE: 0.06891138106584549
+Batch 0, Input 28, MSE: 0.06890951842069626
+Batch 0, Input 29, MSE: 0.06895177811384201
+Batch 0, Input 30, MSE: 0.0690067857503891
+Batch 0, Input 31, MSE: 0.06904249638319016
+Batch 0, Input 32, MSE: 0.06900190562009811
+Batch 0, Input 33, MSE: 0.0689622089266777
+Batch 0, Input 34, MSE: 0.06886337697505951
+Batch 0, Input 35, MSE: 0.06866604834794998
+Batch 0, Input 36, MSE: 0.06845409423112869
+Batch 0, Input 37, MSE: 0.06819810718297958
+Batch 0, Input 38, MSE: 0.06795615702867508
+Batch 0, Input 39, MSE: 0.0676892101764679
+
+Batch 1, Input 0, MSE: 0.06747240573167801
+Batch 1, Input 1, MSE: 0.06737077981233597
+Batch 1, Input 2, MSE: 0.06719893962144852
+
