@@ -144,6 +144,7 @@ def evolve_latent(args, evo_class, evo_hparams, autoencoder_class, autoencoder_h
 
     # Load EvolvedLatent model
     exmp_input = autoencoder.encoder(exmp_input)
+    exmp_input = jnp.expand_dims(exmp_input, axis=-1)
     evo_model, variables = load_model(
         evo_class, evo_hparams, args.evo_checkpoint, exmp_input, args.seed
     )
@@ -156,6 +157,53 @@ def evolve_latent(args, evo_class, evo_hparams, autoencoder_class, autoencoder_h
         data_shape=data_shape,
         is_train=False,
     )
+    [val_loader] = dataloader.create_data_loaders(
+        val_ds,
+        train=[False],
+        batch_size=args.batch_size,
+        num_workers=args.workers,
+        seed=args.seed,
+    )
+
+    key, rng_key = jax.random.split(key)
+
+    def predict(x):
+        x = autoencoder.encoder.apply(
+            {"params": autoencoder.encoder.variables["params"]},
+            x,
+            train=False,
+            rngs={"dropout": rng_key},
+        )
+        x = jnp.expand_dims(x, axis=-1)
+        pred = evo_model.apply(
+            {"params": evo_model.variables["params"]}, x, train=False
+        )
+        pred = jnp.squeeze(pred, axis=-1)
+        y_pred = autoencoder.decoder.apply(
+            {"params": autoencoder.decoder.variables["params"]},
+            pred,
+            train=False,
+            rngs={"dropout": rng_key},
+        )
+        return y_pred
+
+    def calculate_mse(y_true, y_pred):
+        axes = tuple(range(1, len(y_true.shape)))
+        loss = jnp.sum(jnp.mean((y_pred - y_true) ** 2, axis=axes))
+        return loss
+
+    predict_fn = jax.jit(predict)
+    calculate_mse_fn = jax.jit(calculate_mse)
+
+    for i, (inputs, outputs) in enumerate(val_loader):
+        num_inputs = inputs.shape[0]
+        for j in range(num_inputs):
+            x = inputs[j : j + 1]
+            y = outputs[j : j + 1]
+            y_pred = predict_fn(x)
+            mse = calculate_mse_fn(y, y_pred)
+            print(f"Batch {i}, Input {j}, MSE: {mse}")
+        print()
 
 
 def train_evo(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hparams):
