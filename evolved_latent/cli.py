@@ -86,8 +86,76 @@ def main():
             raise ValueError("Autoencoder checkpoint must be provided.")
         train_evo(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hparams)
 
+    elif args.command == "evolve_latent":
+        if args.evo_checkpoint is None or args.autoencoder_checkpoint is None:
+            raise ValueError("EvolvedLatent checkpoint must be provided.")
+        evolve_latent(
+            args, evo_class, evo_hparams, autoencoder_class, autoencoder_hparams
+        )
+
     else:
         raise ValueError(f"Command {args.command} not supported.")
+
+
+def load_model(model_class, model_hparams, checkpoint, example_input, seed=0):
+    model = model_class.create(**model_hparams)
+    model_rng = jax.random.PRNGKey(seed)
+    model_rng, init_rng = jax.random.split(model_rng)
+    variables = model.init(init_rng, example_input, train=True)
+
+    checkpoint = os.path.abspath(checkpoint)
+    options = ocp.CheckpointManagerOptions(max_to_keep=5, create=True)
+    checkpoint_manager = ocp.CheckpointManager(
+        checkpoint,
+        options=options,
+    )
+    step = checkpoint_manager.best_step()
+    state_dict = checkpoint_manager.restore(
+        step,
+        args=ocp.args.StandardRestore(
+            {"params": variables["params"], "batch_stats": variables.get("batch_stats")}
+        ),
+    )
+    if "batch_stats" in variables:
+        variables["batch_stats"] = state_dict["batch_stats"]
+    print(f"Model: {model}")
+    return model, variables
+
+
+def evolve_latent(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hparams):
+    lib_dir = importlib.resources.files(evolved_latent)
+    source_dir = os.path.dirname(lib_dir)
+    data_dir = os.path.join(source_dir, "local_data", "vel_field_vtk")
+
+    data_shape = (100, 100, 200, 1)
+
+    # Load autoencoder
+    key = jax.random.PRNGKey(args.seed)
+    key, init_key = jax.random.split(key)
+    exmp_input = jax.random.normal(init_key, (1, *data_shape))
+    autoencoder, variables = load_model(
+        autoencoder_class,
+        autoencoder_hparams,
+        args.autoencoder_checkpoint,
+        exmp_input,
+        args.seed,
+    )
+    autoencoder = autoencoder.bind(variables)
+
+    # Load EvolvedLatent model
+    exmp_input = autoencoder.encoder(exmp_input)
+    evo_model, variables = load_model(
+        evo_class, evo_hparams, args.evo_checkpoint, exmp_input, args.seed
+    )
+    evo_model = evo_model.bind(variables)
+    del variables
+
+    val_ds = dataloader.SequenceGenerator(
+        data_dir=data_dir,
+        batch_size=args.batch_size,
+        data_shape=data_shape,
+        is_train=False,
+    )
 
 
 def train_evo(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hparams):
@@ -257,6 +325,7 @@ def parse_agrs():
     parser.add_argument("--evo_num_heads", type=int, default=8)
     parser.add_argument("--evo_num_layers", type=int, default=6)
     parser.add_argument("--autoencoder_checkpoint", type=str, default=None)
+    parser.add_argument("--evo_checkpoint", type=str, default=None)
     parser.add_argument("--num_epochs", type=int, default=100)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--grad_accum_steps", type=int, default=1)
