@@ -40,3 +40,31 @@ This package was created with Cookiecutter_ and the `briggySmalls/cookiecutter-p
 
 poetry source add --priority=explicit pytorch-gpu-src https://download.pytorch.org/whl/cu124
 poetry add --source pytorch-gpu-src torch torchvision torchaudio
+
+## Commands
+
+Train Autoencoder
+
+```bash
+poetry run main --command train_autoencoder --num_epochs 250 --batch_size 40 \
+        --grad_accum_steps 1 --workers 8 --autoencoder_type resnet_norm
+```
+
+Train EvoLatent
+
+```bash
+poetry run main --command train_evo --num_epochs 250 --batch_size 40 \
+        --grad_accum_steps 1 --workers 8 --autoencoder_type resnet_norm \
+        --autoencoder_checkpoint ./logs/ResNetNormAutoencoder_20240812-205311/ \
+        --evo_type transformer --evo_hidden_size 256 --evo_num_layers 3
+```
+
+Combine Autoencoder and EvoLatent
+
+```bash
+poetry run main --command train_evo --num_epochs 250 --batch_size 40 \
+        --grad_accum_steps 1 --workers 8 --autoencoder_type resnet_norm \
+        --autoencoder_checkpoint ./logs/ResNetNormAutoencoder_20240812-205311/ \
+        --evo_type transformer --evo_hidden_size 64 --evo_num_layers 6 \
+        --evo_checkpoint ./logs/EvolvedLatentTransformer_20240815-163019/
+```
