@@ -2,65 +2,32 @@
 
 import os
 
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-os.environ["TF_GPU_ALLOCATOR"] = "cuda_malloc_async"  # to avoid memory fragmentation
-# os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-
-# Jax acceleration flags
-os.environ["XLA_FLAGS"] = (
-    "--xla_gpu_enable_triton_softmax_fusion=true "
-    "--xla_gpu_triton_gemm_any=True "
-    # "--xla_gpu_enable_async_collectives=true "
-    # "--xla_gpu_enable_latency_hiding_scheduler=true "
-    # "--xla_gpu_enable_highest_priority_async_stream=true "
-)
-
+# os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 import importlib.resources
 import argparse
 import evolved_latent
-
 from evolved_latent import trainers, networks
-from evolved_latent.utils import dataloader
-import jax
-import jax.numpy as jnp
+from evolved_latent.utils import dataloader, pytorch_utils, utils
 import time
-import orbax.checkpoint as ocp
+from torchinfo import summary
+import torch
 
 
 def main():
     args = parse_agrs()
-    print(f"Number of GPUs: {jax.device_count(backend='gpu')}")
-    print("Device:", jax.devices()[0])
-
-    lib_dir = importlib.resources.files(evolved_latent)
-    source_dir = os.path.dirname(lib_dir)
-    data_dir = os.path.join(source_dir, "local_data", "vel_field_vtk")
-
-    data_shape = (100, 100, 200, 1)
-    num_epochs = args.num_epochs
-    batch_size = args.batch_size
-    workers = args.workers
 
     autoencoder_hparams = {
-        "top_sizes": (1, 2, 4),
-        "mid_sizes": (200, 200, 400),
-        "bottom_sizes": (400, 512),
-        "dense_sizes": (1024, 256, 64),
+        "input_shape": (1, 20000),
+        "conv_sizes": (1, 16, 32, 64, 32, 1),
+        "linear_sizes": (512, 64, 32),
         "activation": "gelu",
-        "dtype": "bfloat16",
     }
     if args.autoencoder_type == "baseline":
-        autoencoder_class = networks.autoencoder_baseline.BaselineAutoencoder
-    elif args.autoencoder_type == "resnet":
-        autoencoder_class = networks.autoencoder_resnet.ResNetAutoencoder
-    elif args.autoencoder_type == "resnet_norm":
-        autoencoder_class = networks.autoencoder_resnet_norm.ResNetNormAutoencoder
-    elif args.autoencoder_type == "res_attn":
-        autoencoder_class = networks.autoencoder_res_attn.ResNetAttentionAutoencoder
-    elif args.autoencoder_type == "res_attn_qk":
-        autoencoder_class = (
-            networks.autoencoder_res_attn_qk.ResNetAttentionQKAutoencoder
-        )
+        autoencoder_class = networks.autoencoder_1d_baseline.AEBaseline
+    elif args.autoencoder_type == "vae":
+        raise ValueError("VAE not supported.")
+    elif args.autoencoder_type == "vqvae":
+        raise ValueError("VQ-VAE not supported.")
     else:
         raise ValueError(f"Autoencoder type {args.autoencoder_type} not supported.")
 
@@ -73,25 +40,25 @@ def main():
         "causal_mask": False,
         "dtype": "bfloat16",
     }
-    if args.evo_type == "transformer":
-        evo_class = networks.evolved_latent_transformer.EvolvedLatentTransformer
-    else:
-        raise ValueError(f"EvolvedLatent type {args.evo_type} not supported.")
+    # if args.evo_type == "transformer":
+    #     evo_class = networks.evolved_latent_transformer.EvolvedLatentTransformer
+    # else:
+    #     raise ValueError(f"EvolvedLatent type {args.evo_type} not supported.")
 
     if args.command == "train_autoencoder":
         train_autoencoder(args, autoencoder_class, autoencoder_hparams)
 
-    elif args.command == "train_evo":
-        if args.autoencoder_checkpoint is None:
-            raise ValueError("Autoencoder checkpoint must be provided.")
-        train_evo(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hparams)
+    # elif args.command == "train_evo":
+    #     if args.autoencoder_checkpoint is None:
+    #         raise ValueError("Autoencoder checkpoint must be provided.")
+    #     train_evo(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hparams)
 
-    elif args.command == "evolve_latent":
-        if args.evo_checkpoint is None or args.autoencoder_checkpoint is None:
-            raise ValueError("EvolvedLatent checkpoint must be provided.")
-        evolve_latent(
-            args, evo_class, evo_hparams, autoencoder_class, autoencoder_hparams
-        )
+    # elif args.command == "evolve_latent":
+    #     if args.evo_checkpoint is None or args.autoencoder_checkpoint is None:
+    #         raise ValueError("EvolvedLatent checkpoint must be provided.")
+    #     evolve_latent(
+    #         args, evo_class, evo_hparams, autoencoder_class, autoencoder_hparams
+    #     )
 
     else:
         raise ValueError(f"Command {args.command} not supported.")
@@ -306,23 +273,23 @@ def train_evo(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hpara
 
 def train_autoencoder(args, autoencoder_class, autoencoder_hparams):
 
-    lib_dir = importlib.resources.files(evolved_latent)
-    source_dir = os.path.dirname(lib_dir)
-    data_dir = os.path.join(source_dir, "local_data", "vel_field_vtk")
-
-    data_shape = (100, 100, 200, 1)
+    data_shape = (928, 20000)
 
     train_ds = dataloader.FlameGenerator(
-        data_dir,
+        args.data_dir,
         batch_size=args.batch_size,
         data_shape=data_shape,
     )
+
     val_ds = dataloader.FlameGenerator(
-        data_dir,
+        args.data_dir,
         batch_size=args.batch_size,
         data_shape=data_shape,
         is_train=False,
     )
+
+    print(f"Train DS: {len(train_ds)}")
+    print(f"Val DS: {len(val_ds)}")
 
     train_loader, val_loader = dataloader.create_data_loaders(
         train_ds,
@@ -334,7 +301,7 @@ def train_autoencoder(args, autoencoder_class, autoencoder_hparams):
     )
 
     current_time = time.strftime("%Y%m%d-%H%M%S")
-    exmp_input = jax.random.normal(jax.random.PRNGKey(args.seed), (1, *data_shape))
+
     trainer_config = {
         "model_class": autoencoder_class,
         "model_hparams": autoencoder_hparams,
@@ -369,7 +336,7 @@ def parse_agrs():
     parser = argparse.ArgumentParser()
     # parser.add_argument("--config_file", "-dcfg", type=str, required=True)
     parser.add_argument("--command", "-cmd", type=str, required=True)
-    parser.add_argument("--autoencoder_type", type=str, required=True, default="resnet")
+    parser.add_argument("--autoencoder_type", type=str, default="baseline")
     parser.add_argument("--evo_type", type=str, default="transformer")
     parser.add_argument("--evo_hidden_size", type=int, default=128)
     parser.add_argument("--evo_num_heads", type=int, default=8)
@@ -383,9 +350,16 @@ def parse_agrs():
     parser.add_argument("--log_interval", type=int, default=1)
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--data_dir", type=str, default=None)
 
     args = parser.parse_args()
 
+    lib_dir = importlib.resources.files(evolved_latent)
+    source_dir = os.path.dirname(lib_dir)
+    args.source_dir = source_dir
+
+    device = pytorch_utils.init_gpu()
+    args.device = device
     return args
 
 
