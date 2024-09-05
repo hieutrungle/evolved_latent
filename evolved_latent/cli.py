@@ -25,7 +25,7 @@ def main():
     if args.autoencoder_type == "baseline":
         autoencoder_class = networks.autoencoder_1d_baseline.AEBaseline
     elif args.autoencoder_type == "vae":
-        raise ValueError("VAE not supported.")
+        autoencoder_class = networks.autoencoder_1d_vae.VariationalAutoencoder
     elif args.autoencoder_type == "vqvae":
         raise ValueError("VQ-VAE not supported.")
     else:

@@ -6,7 +6,7 @@ from evolved_latent.networks.common_blocks import DownResidual1DBlock, UpResidua
 import numpy as np
 
 
-class AEBaseline(nn.Module):
+class VariationalAutoencoder(nn.Module):
     """AEBaseline module for Pytorch."""
 
     def __init__(
@@ -27,7 +27,7 @@ class AEBaseline(nn.Module):
         }
         self.encoder = EncoderBaseline(**encoder_config)
 
-        input_shape = self.encoder(torch.zeros(1, *input_shape)).shape[1:]
+        input_shape = self.encoder(torch.zeros(1, *input_shape))[0].shape[1:]
         decoder_config = {
             "input_shape": input_shape,
             "conv_sizes": conv_sizes[::-1],
