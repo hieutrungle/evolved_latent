@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 from evolved_latent.networks.network_utils import Activation, _str_to_activation
 from evolved_latent.networks.common_blocks import DownResidual1DBlock, UpResidual1DBlock
+from evolved_latent.networks import vector_quantizer
 import numpy as np
 
 
@@ -35,6 +36,9 @@ class AEBaseline(nn.Module):
             "activation": activation,
         }
         self.decoder = DecoderBaseline(**decoder_config)
+
+        embedding_dim = np.prod(input_shape)
+        self.vq_layer = vector_quantizer.VectorQuantizerEMA(256, embedding_dim)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.encoder(x)
