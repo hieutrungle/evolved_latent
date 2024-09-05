@@ -83,8 +83,6 @@ class FlameGenerator(torch.utils.data.Dataset):
         self.np_data = np.load(self.filenames[0])
         mean = np.mean(self.np_data)
         std = np.std(self.np_data)
-        print(f"mean: {np.mean(self.np_data)}, std: {np.std(self.np_data)}")
-        print(f"min: {np.min(self.np_data)}, max: {np.max(self.np_data)}")
 
         if is_train:
             self.np_data = self.np_data[:, : int(self.np_data.shape[1] * 0.9)]
@@ -123,37 +121,33 @@ class SequenceGenerator(torch.utils.data.Dataset):
         self.data_shape = data_shape
 
         self.filenames = glob.glob(data_dir + "/*.npy", recursive=True)
-        self.filenames.sort(
-            key=lambda x: int(os.path.splitext(os.path.basename(x))[0].split("_")[-1])
-        )
-        # self.filenames = self.filenames[:88]
         self.num_files = len(self.filenames)
+        self.np_data = np.load(self.filenames[0])
+        mean = np.mean(self.np_data)
+        std = np.std(self.np_data)
 
         if is_train:
-            self.num_files = int(self.num_files * 0.9)
-            self.filenames = self.filenames[: self.num_files]
+            self.np_data = self.np_data[:, : int(self.np_data.shape[1] * 0.9)]
         else:
-            self.num_files = int(self.num_files * 0.1)
-            self.filenames = self.filenames[self.num_files :]
+            self.np_data = self.np_data[:, int(self.np_data.shape[1] * 0.9) :]
 
-    def read_vtk(self, filename):
-        data_ = pv.read(filename)
-        data_ = data_.get_array("-velocity_magnitude")
-        data_ = np.array(data_)
-        data_ = data_.reshape(self.data_shape)
-        data_ = self.normalize(data_)
+        self.transforms = v2.Compose(
+            [
+                v2.Normalize(mean=[mean], std=[std]),
+                v2.ToDtype(torch.float32, scale=True),
+            ]
+        )
+
+    def _get_data(self, i):
+        data_ = self.np_data[:, i : i + 1]
+        data_ = np.swapaxes(data_, 0, 1)
+        data_ = self.transforms(data_)
         return data_
 
     def __getitem__(self, i):
-        input_ = self.read_vtk(self.filenames[i])
-        output_ = self.read_vtk(self.filenames[i + 1])
+        input_ = self._get_data(i)
+        output_ = self._get_data(i + 1)
         return (input_, output_)
-
-    def normalize(self, data):
-        return data / 6.8
-
-    def denormalize(self, data):
-        return data * 6.8
 
     def __len__(self):
         return self.num_files - 1

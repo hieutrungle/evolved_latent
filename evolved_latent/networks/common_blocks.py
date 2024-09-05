@@ -92,69 +92,72 @@ class UpResidual1DBlock(nn.Module):
         return x
 
 
-# class EvoPositionalEmbedding(nn.Module):
-#     """EvoPositionalEmbedding module for Flax."""
+class EvoPositionalEmbedding(nn.Module):
+    """EvoPositionalEmbedding module for Pytorch."""
 
-#     hidden_size: int
-#     max_seq_len: int
-#     dtype: jnp.dtype
+    def __init__(
+        self, input_size: int, hidden_size: int, max_seq_len: int, dtype: torch.dtype
+    ):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.max_seq_len = max_seq_len
+        self.dtype = dtype
+        self.linear = nn.Linear(input_size, hidden_size)
+        self.embedding = nn.Embedding(max_seq_len, hidden_size)
 
-#     @nn.compact
-#     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
-#         x = nn.Dense(self.hidden_size, dtype=self.dtype, name="input_layer")(x)
-#         pos = jnp.arange(x.shape[1], dtype=jnp.int16)
-#         pos_emb = nn.Embed(
-#             num_embeddings=self.max_seq_len,
-#             features=self.hidden_size,
-#             dtype=self.dtype,
-#             name="pos_emb",
-#         )(pos)
-#         pos_emb = pos_emb.astype(self.dtype)
-#         x = x + pos_emb[None, : x.shape[1]]
-#         return x
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.linear(x)
+        pos = torch.arange(x.shape[1], dtype=torch.int16)
+        pos_emb = self.embedding(pos)
+        pos_emb = pos_emb.to(self.dtype)
+        x = x + pos_emb[None, : x.shape[1]]
+        return x
 
 
-# class TransformerEncoderBlock(nn.Module):
-#     """TransformerEncoder module for Flax."""
+class TransformerENcoderBlock(nn.Module):
+    def __init__(
+        self,
+        hidden_size: int,
+        num_heads: int,
+        causal_mask: bool,
+        dtype: torch.dtype,
+        dropout_rate: float = 0.05,
+        mask: torch.Tensor = None,
+    ):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.num_heads = num_heads
+        self.causal_mask = causal_mask
+        self.dtype = dtype
+        self.dropout_rate = dropout_rate
+        self.mask = mask
 
-#     hidden_size: int
-#     num_heads: int
-#     causal_mask: bool
-#     dtype: jnp.dtype
-#     dropout_rate: float = 0.05
-#     mask: jnp.ndarray | None = None
-#     train: bool = True
+        self.attn = nn.MultiheadAttention(
+            embed_dim=hidden_size,
+            num_heads=num_heads,
+            dropout=dropout_rate,
+            batch_first=True,
+        )
 
-#     @nn.compact
-#     def __call__(self, x: jnp.ndarray) -> jnp.ndarray:
+        self.dropout = nn.Dropout(dropout_rate)
+        self.layer_norm1 = nn.LayerNorm(hidden_size)
 
-#         attn_outs = nn.MultiHeadAttention(
-#             num_heads=self.num_heads,
-#             qkv_features=x.shape[-1] * 2,
-#             out_features=x.shape[-1],
-#             dropout_rate=self.dropout_rate,
-#             deterministic=not self.train,
-#             dtype=self.dtype,
-#             force_fp32_for_softmax=True,
-#             # normalize_qk=True,
-#         )(x, x, x, mask=self.mask)
+        self.mlp = nn.Sequential(
+            nn.Linear(hidden_size, hidden_size * 4),
+            nn.GELU(),
+            nn.Linear(hidden_size * 4, hidden_size),
+        )
+        self.layer_norm2 = nn.LayerNorm(hidden_size)
 
-#         x = x + nn.Dropout(rate=self.dropout_rate)(
-#             attn_outs, deterministic=not self.train
-#         )
-#         x = nn.LayerNorm(dtype=self.dtype)(x)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        attn_outs, _ = self.attn(
+            x, x, x, key_padding_mask=self.mask, need_weights=False
+        )
+        x = x + self.dropout(attn_outs)
+        x = self.layer_norm1(x)
 
-#         # MLP block
-#         linear_outs = nn.Dense(
-#             self.hidden_size * 4, dtype=self.dtype, name="mlp_expand"
-#         )(x)
-#         linear_outs = nn.gelu(linear_outs)
-#         linear_outs = nn.Dense(self.hidden_size, dtype=self.dtype, name="mlp_contract")(
-#             linear_outs
-#         )
-#         x = x + nn.Dropout(rate=self.dropout_rate)(
-#             linear_outs, deterministic=not self.train
-#         )
-#         x = nn.LayerNorm(dtype=self.dtype)(x)
+        mlp_outs = self.mlp(x)
+        x = x + self.dropout(mlp_outs)
+        x = self.layer_norm2(x)
 
-#         return x
+        return x
