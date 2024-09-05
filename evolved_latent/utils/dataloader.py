@@ -5,6 +5,9 @@ import numpy as np
 import glob
 import os
 
+# import transform
+from torchvision.transforms import v2
+
 ######################################################################
 # Pytorch DataLoader
 ######################################################################
@@ -52,7 +55,7 @@ def create_data_loaders(
             batch_size=batch_size,
             shuffle=is_train,
             drop_last=is_train,
-            collate_fn=numpy_collate,
+            # collate_fn=numpy_collate,
             num_workers=num_workers_,
             # persistent_workers=is_train,
             generator=torch.Generator().manual_seed(seed),
@@ -78,22 +81,28 @@ class FlameGenerator(torch.utils.data.Dataset):
         self.filenames = glob.glob(data_dir + "/*.npy", recursive=True)
         self.num_files = len(self.filenames)
         self.np_data = np.load(self.filenames[0])
+        mean = np.mean(self.np_data)
+        std = np.std(self.np_data)
+        print(f"mean: {np.mean(self.np_data)}, std: {np.std(self.np_data)}")
+        print(f"min: {np.min(self.np_data)}, max: {np.max(self.np_data)}")
 
         if is_train:
             self.np_data = self.np_data[:, : int(self.np_data.shape[1] * 0.9)]
         else:
             self.np_data = self.np_data[:, int(self.np_data.shape[1] * 0.9) :]
 
+        self.transforms = v2.Compose(
+            [
+                v2.Normalize(mean=[mean], std=[std]),
+                v2.ToDtype(torch.float32, scale=True),
+            ]
+        )
+
     def __getitem__(self, i):
         data_ = self.np_data[:, i : i + 1]
         data_ = np.swapaxes(data_, 0, 1)
+        data_ = self.transforms(data_)
         return (data_, data_)
-
-    def normalize(self, data):
-        return data / 6.8
-
-    def denormalize(self, data):
-        return data * 6.8
 
     def __len__(self):
         return self.np_data.shape[1]

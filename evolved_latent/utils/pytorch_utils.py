@@ -26,6 +26,12 @@ def set_device(gpu_id):
     torch.cuda.set_device(gpu_id)
 
 
+def list_to_device(data: list[torch.Tensor, np.ndarray], device: torch.device) -> list:
+    if isinstance(data[0], np.ndarray):
+        return [from_numpy(d, device) for d in data]
+    return [d.float().to(device) for d in data]
+
+
 def from_numpy(
     data: Union[np.ndarray, dict], device: torch.device, **kwargs
 ) -> Union[torch.Tensor, dict]:

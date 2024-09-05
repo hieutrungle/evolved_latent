@@ -31,10 +31,7 @@ class AutoencoderTrainer(TrainerModule):
         )
 
     def init_gradient_scaler(self):
-        if "cuda" in self.device.type:
-            self.scaler = torch.cuda.amp.GradScaler()
-        else:
-            raise f"Device {self.device.type} not supported."
+        self.scaler = torch.amp.GradScaler(self.device.type)
 
     def save_models(self, step: int):
         """
@@ -63,32 +60,28 @@ class AutoencoderTrainer(TrainerModule):
 
     def create_step_functions(self):
 
-        def mse_loss(params, batch, train, rng_key):
+        def mse_loss(batch):
             x, y = batch
-            pred = self.model.apply(
-                {"params": params}, x, train=train, rngs={"dropout": rng_key}
-            )
+            pred = self.model(x)
             axes = tuple(range(1, len(y.shape)))
             loss = torch.sum(torch.mean((pred - y) ** 2, axis=axes))
             return loss
 
-        def train_step(state, batch):
+        def train_step(batch):
             with torch.autocast(device_type=self.device.type, dtype=torch.bfloat16):
-                loss, grads = accumulate_gradients(state, batch, step_rng)
+                loss = mse_loss(batch)
 
             self.optimizer.zero_grad(set_to_none=True)
             self.scaler.scale(loss).backward()
             self.scaler.unscale_(self.optimizer)
-            torch.nn.utils.clip_grad_norm_(
-                self.model.critics.parameters(), max_norm=1.0
-            )
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
             self.scaler.step(self.optimizer)
             self.scaler.update()
             self.scheduler.step()
-            return info
+            return {"loss": loss}
 
-        def eval_step(state, batch):
-            loss = mse_loss(state.params, batch, train=False, rng_key=state.rng)
+        def eval_step(batch):
+            loss = mse_loss(batch)
             return {"loss": loss}
 
         return train_step, eval_step

@@ -273,18 +273,18 @@ def train_evo(args, evo_class, evo_hparams, autoencoder_class, autoencoder_hpara
 
 def train_autoencoder(args, autoencoder_class, autoencoder_hparams):
 
-    data_shape = (928, 20000)
+    input_shape = (1, 20000)
 
     train_ds = dataloader.FlameGenerator(
         args.data_dir,
         batch_size=args.batch_size,
-        data_shape=data_shape,
+        data_shape=input_shape,
     )
 
     val_ds = dataloader.FlameGenerator(
         args.data_dir,
         batch_size=args.batch_size,
-        data_shape=data_shape,
+        data_shape=input_shape,
         is_train=False,
     )
 
@@ -309,14 +309,15 @@ def train_autoencoder(args, autoencoder_class, autoencoder_hparams):
             "optimizer": "adamw",
             "lr": 1e-3,
         },
-        "exmp_input": exmp_input,
+        "input_shape": input_shape,
         "grad_accum_steps": args.grad_accum_steps,
         "seed": args.seed,
         "logger_params": {
-            "log_dir": os.path.join(source_dir, "logs"),
+            "log_dir": os.path.join(args.source_dir, "logs"),
             "log_name": os.path.join("evolved_latent_" + current_time),
         },
         "check_val_every_n_epoch": 1,
+        "device": args.device,
     }
     trainer_config["logger_params"]["log_name"] = (
         trainer_config["model_class"].__name__ + "_" + current_time
@@ -327,7 +328,7 @@ def train_autoencoder(args, autoencoder_class, autoencoder_hparams):
     print(f"*" * 80)
     print(f"Training {trainer.model_class.__name__} model")
     eval_metrics = trainer.train_model(
-        train_loader, val_loader, val_loader, num_epochs=args.num_epochs
+        train_loader, val_loader, val_loader, num_epochs=args.num_epochs, args=args
     )
     print(f"Eval metrics: \n{eval_metrics}")
 
@@ -351,6 +352,7 @@ def parse_agrs():
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--data_dir", type=str, default=None)
+    parser.add_argument("--resume", action="store_true")
 
     args = parser.parse_args()
 

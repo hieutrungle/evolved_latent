@@ -15,6 +15,7 @@ import torch.nn as nn
 from torchinfo import summary
 from torch import optim
 import glob
+from collections import defaultdict
 
 
 class TrainerModule:
@@ -32,6 +33,9 @@ class TrainerModule:
         debug: bool = False,
         check_val_every_n_epoch: int = 10,
         dtype: torch.dtype = torch.bfloat16,
+        device: torch.device = torch.device(
+            "cuda" if torch.cuda.is_available() else "cpu"
+        ),
         **kwargs,
     ):
         """
@@ -62,6 +66,7 @@ class TrainerModule:
         self.check_val_every_n_epoch = check_val_every_n_epoch
         self.grad_accum_steps = grad_accum_steps
         self.dtype = dtype
+        self.device = device
 
         # Set of hyperparameters to save
         self.config = {
@@ -84,9 +89,7 @@ class TrainerModule:
 
         # Init trainer parts
         self.logger = self.init_logger(logger_params)
-        (self.train_step, self.eval_step, self.update_step) = (
-            self.create_step_functions()
-        )
+        (self.train_step, self.eval_step) = self.create_step_functions()
 
     def create_model(self, model_class: Callable, model_hparams: Dict[str, Any]):
         """
@@ -289,9 +292,6 @@ class TrainerModule:
             num_epochs // self.check_val_every_n_epoch > 0
         ), f"Number of epochs ({num_epochs}) must be larger than check_val_every_n_epoch ({self.check_val_every_n_epoch})"
 
-        print("\n" + f"*" * 80)
-        print(f"Training {self.model_class.__name__} and {self.critic_class.__name__}")
-
         # Create optimizer and the scheduler for the given number of epochs
         self.init_model_optimizer(num_epochs, len(train_loader))
 
@@ -342,7 +342,7 @@ class TrainerModule:
                 if self.is_new_model_better(eval_metrics, best_eval_metrics):
                     best_eval_metrics = eval_metrics
                     best_eval_metrics.update(train_metrics)
-                    self.save_model(step=epoch_idx)
+                    self.save_models(step=epoch_idx)
                     self.save_metrics("best_eval", eval_metrics)
 
             t.set_postfix(
@@ -384,15 +384,14 @@ class TrainerModule:
         num_train_steps = len(train_loader)
         start_time = time.time()
         for i, batch in enumerate(train_loader):
-            # for batch in self.tracker(train_loader, desc="Training", leave=False):
-            self.state, step_metrics = self.train_step(self.state, batch)
+            batch = pytorch_utils.list_to_device(batch, self.device)
+            step_metrics = self.train_step(batch)
+            step_metrics = pytorch_utils.to_numpy(step_metrics)
             for key in step_metrics:
                 metrics[log_prefix + key] += step_metrics[key] / num_train_steps
         metrics = {key: metrics[key].item() for key in metrics}
         metrics["epoch_time"] = time.time() - start_time
-        metrics["learning_rate"] = float(
-            self.state.opt_state.hyperparams["learning_rate"]
-        )
+        metrics["learning_rate"] = float(self.scheduler.get_last_lr()[0])
         return metrics
 
     def eval_model(
@@ -413,7 +412,9 @@ class TrainerModule:
         metrics = defaultdict(float)
         num_elements = 0
         for batch in data_loader:
-            step_metrics = self.eval_step(self.state, batch)
+            batch = pytorch_utils.list_to_device(batch, self.device)
+            step_metrics = self.eval_step(batch)
+            step_metrics = pytorch_utils.to_numpy(step_metrics)
             batch_size = (
                 batch[0].shape[0]
                 if isinstance(batch, (list, tuple))
@@ -483,7 +484,9 @@ class TrainerModule:
           filename: Name of the metrics file without folders and postfix.
           metrics: A dictionary of metrics to save in the file.
         """
-        with open(os.path.join(self.log_dir, f"metrics/{filename}.json"), "w") as f:
+        with open(
+            os.path.join(self.logger.log_dir, f"metrics/{filename}.json"), "w"
+        ) as f:
             json.dump(metrics, f, indent=4)
 
     def on_training_start(self):
@@ -522,11 +525,11 @@ class TrainerModule:
     @staticmethod
     def save_models(self, step: int):
         """
-        Save the agent's parameters to a file.
+        Save the model's parameters to a file.
         """
         ckpt = {
             "step": step,
-            "agent": self.agent.state_dict(),
+            "model": self.model.state_dict(),
             "config": self.config,
         }
         torch.save(ckpt, os.path.join(self.logger.log_dir, f"checkpoints.pt"))
@@ -534,10 +537,10 @@ class TrainerModule:
     @staticmethod
     def load_models(self) -> int:
         """
-        Load the agent's parameters from a file.
+        Load the model's parameters from a file.
         """
         ckpt = torch.load(os.path.join(self.logger.log_dir, f"checkpoints.pt"))
-        self.agent.load_state_dict(ckpt["agent"])
+        self.model.load_state_dict(ckpt["model"])
         step = ckpt.get("step", 0)
         return step
 
