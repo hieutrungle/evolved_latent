@@ -85,9 +85,9 @@ class FlameGenerator(torch.utils.data.Dataset):
         std = np.std(self.np_data)
 
         if is_train:
-            self.np_data = self.np_data[:, : int(self.np_data.shape[1] * 0.9)]
+            self.np_data = self.np_data[:, : int(self.np_data.shape[1] * 0.91)]
         else:
-            self.np_data = self.np_data[:, int(self.np_data.shape[1] * 0.9) :]
+            self.np_data = self.np_data[:, int(self.np_data.shape[1] * 0.91) :]
 
         self.transforms = v2.Compose(
             [
@@ -127,9 +127,9 @@ class SequenceGenerator(torch.utils.data.Dataset):
         std = np.std(self.np_data)
 
         if is_train:
-            self.np_data = self.np_data[:, : int(self.np_data.shape[1] * 0.9)]
+            self.np_data = self.np_data[:, : int(self.np_data.shape[1] * 0.91)]
         else:
-            self.np_data = self.np_data[:, int(self.np_data.shape[1] * 0.9) :]
+            self.np_data = self.np_data[:, int(self.np_data.shape[1] * 0.91) :]
 
         self.transforms = v2.Compose(
             [
