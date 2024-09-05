@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Sequence, Tuple
 import torch
 import torch.nn as nn
 from evolved_latent.networks.network_utils import Activation, _str_to_activation
@@ -37,9 +37,23 @@ class AEBaseline(nn.Module):
         self.decoder = DecoderBaseline(**decoder_config)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.encoder(x)
+        means, log_stds = self.encoder(x)
+        x = self.reparametrize(means, log_stds)
         x = self.decoder(x)
         return x
+
+    def encode(self, x: torch.Tensor) -> Tuple[torch.Tensor]:
+        return self.encoder(x)
+
+    def decode(self, x: torch.Tensor) -> torch.Tensor:
+        return self.decoder(x)
+
+    def reparametrize(
+        self, means: torch.Tensor, log_stds: torch.Tensor
+    ) -> torch.Tensor:
+        stds = torch.exp(log_stds)
+        eps = torch.randn_like(stds)
+        return means + eps * stds
 
 
 class EncoderBaseline(nn.Module):
@@ -78,6 +92,9 @@ class EncoderBaseline(nn.Module):
             self.linear_layers.append(nn.Linear(input_size, linear_sizes[i]))
             input_size = linear_sizes[i]
 
+        self.mean = nn.Linear(input_size, input_size)
+        self.log_std = nn.Linear(input_size, input_size)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         for conv_layer in self.conv_layers:
             x = conv_layer(x)
@@ -86,7 +103,10 @@ class EncoderBaseline(nn.Module):
         for linear_layer in self.linear_layers:
             x = linear_layer(x)
 
-        return x
+        means = self.mean(x)
+        log_stds = self.log_std(x)
+
+        return means, log_stds
 
 
 class DecoderBaseline(nn.Module):
