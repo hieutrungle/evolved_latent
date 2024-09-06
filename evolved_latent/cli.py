@@ -27,7 +27,13 @@ def main():
     elif args.autoencoder_type == "vae":
         autoencoder_class = networks.autoencoder_1d_vae.VariationalAutoencoder
     elif args.autoencoder_type == "vqvae":
-        raise ValueError("VQ-VAE not supported.")
+        autoencoder_hparams = {
+            "input_shape": (1, 20000),
+            "conv_sizes": (1, 16, 16, 32, 64, 128, 256),
+            "activation": "gelu",
+            "num_embeddings": 256,
+        }
+        autoencoder_class = networks.autoencoder_1d_vqvae.VQVAE
     else:
         raise ValueError(f"Autoencoder type {args.autoencoder_type} not supported.")
 

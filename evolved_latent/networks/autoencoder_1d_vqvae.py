@@ -7,14 +7,13 @@ from evolved_latent.networks import vector_quantizer
 import numpy as np
 
 
-class AEBaseline(nn.Module):
+class VQVAE(nn.Module):
     """AEBaseline module for Pytorch."""
 
     def __init__(
         self,
         input_shape: Sequence[int],
         conv_sizes: Sequence[int],
-        linear_sizes: Sequence[int],
         activation: Activation,
     ):
         super().__init__()
@@ -23,37 +22,41 @@ class AEBaseline(nn.Module):
         encoder_config = {
             "input_shape": input_shape,
             "conv_sizes": conv_sizes,
-            "linear_sizes": linear_sizes,
             "activation": activation,
         }
-        self.encoder = EncoderBaseline(**encoder_config)
+        self.encoder = VQEncoder(**encoder_config)
 
         input_shape = self.encoder(torch.zeros(1, *input_shape)).shape[1:]
         decoder_config = {
             "input_shape": input_shape,
             "conv_sizes": conv_sizes[::-1],
-            "linear_sizes": linear_sizes[::-1],
             "activation": activation,
         }
-        self.decoder = DecoderBaseline(**decoder_config)
+        self.decoder = VQDecoder(**decoder_config)
 
-        embedding_dim = np.prod(input_shape)
-        self.vq_layer = vector_quantizer.VectorQuantizerEMA(256, embedding_dim)
+        embedding_dim = conv_sizes[-1]
+        self.vq_layer = vector_quantizer.VectorQuantizer1DEMA(256, embedding_dim)
+
+    def encode(self, x: torch.Tensor) -> torch.Tensor:
+        return self.encoder(x)
+
+    def decode(self, x: torch.Tensor) -> torch.Tensor:
+        return self.decoder(x)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.encoder(x)
-        x = self.decoder(x)
-        return x
+        x = self.encode(x)
+        z_loss, z_quantized, z_perplexity, _ = self.vq_layer(x)
+        x_hat = self.decode(z_quantized)
+        return x_hat, z_loss, z_perplexity
 
 
-class EncoderBaseline(nn.Module):
-    """EncoderBaseline module for Pytorch."""
+class VQEncoder(nn.Module):
+    """VQEncoder module for Pytorch."""
 
     def __init__(
         self,
         input_shape: Sequence[int],
         conv_sizes: Sequence[int],
-        linear_sizes: Sequence[int],
         activation: nn.Module,
     ):
         super().__init__()
@@ -74,45 +77,22 @@ class EncoderBaseline(nn.Module):
             input_size = conv_sizes[i]
         self.conv_layers = nn.Sequential(*self.conv_layers)
 
-        conv_shape = self.conv_layers(torch.zeros(1, *input_shape)).shape[1:]
-        input_size = np.prod(conv_shape)
-
-        self.linear_layers = nn.ModuleList()
-        for i in range(len(linear_sizes)):
-            self.linear_layers.append(nn.Linear(input_size, linear_sizes[i]))
-            input_size = linear_sizes[i]
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         for conv_layer in self.conv_layers:
             x = conv_layer(x)
-
-        x = x.flatten(1)
-        for linear_layer in self.linear_layers:
-            x = linear_layer(x)
-
         return x
 
 
-class DecoderBaseline(nn.Module):
-    """DecoderBaseline module for Pytorch."""
+class VQDecoder(nn.Module):
+    """VQDecoder module for Pytorch."""
 
     def __init__(
         self,
         input_shape: Sequence[int],
         conv_sizes: Sequence[int],
-        linear_sizes: Sequence[int],
         activation: nn.Module,
     ):
         super().__init__()
-
-        self.linear_layers = nn.ModuleList()
-        input_size = input_shape[0]
-        for i in range(len(linear_sizes)):
-            self.linear_layers.append(nn.Linear(input_size, linear_sizes[i]))
-            input_size = linear_sizes[i]
-
-        mid_size = 625
-        self.mid_linear_layer = nn.Linear(input_size, mid_size)
 
         input_size = conv_sizes[0]
         self.conv_layers = nn.ModuleList()
@@ -130,11 +110,6 @@ class DecoderBaseline(nn.Module):
             input_size = conv_sizes[i]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        for linear_layer in self.linear_layers:
-            x = linear_layer(x)
-
-        x = self.mid_linear_layer(x)
-        x = x.unsqueeze(1)
         for conv_layer in self.conv_layers:
             x = conv_layer(x)
 
